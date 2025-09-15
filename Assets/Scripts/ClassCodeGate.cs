@@ -6,6 +6,7 @@ using UnityEngine.Networking;
 using System.Collections.Generic;
 using UnityEngine.SceneManagement;
 using System.Linq;
+using UnityEngine.EventSystems;
 
 public enum GameplayType
 {
@@ -29,6 +30,19 @@ public class JoinClassPayload
     public int student_id;
 }
 
+[System.Serializable]
+public class ClassSubjectsResponse
+{
+    public SubjectData[] subjects;
+}
+
+[System.Serializable]
+public class SubjectData
+{
+    public string subject_name;
+    public string gameplay_type;
+}
+
 public class ClassCodeGate : MonoBehaviour
 {
     [Header("Class Code UI")]
@@ -38,6 +52,7 @@ public class ClassCodeGate : MonoBehaviour
     public Button skipButton;
     public Button cancelButton;
     public Button showClassCodeButton;
+    public Button refreshSubjectsButton; // Button to manually refresh subjects from server
 
     [Header("Subjects UI")]
     public GameObject subjectButtonsContainer; // The scrollable container for dynamic subject buttons
@@ -135,6 +150,8 @@ public class ClassCodeGate : MonoBehaviour
             cancelButton.onClick.AddListener(CancelClassCode);
         if (showClassCodeButton != null)
             showClassCodeButton.onClick.AddListener(ShowClassCodePanel);
+        if (refreshSubjectsButton != null)
+            refreshSubjectsButton.onClick.AddListener(RefreshSubjectsFromServer);
         if (classCodePanel != null)
             classCodePanel.SetActive(false);
 
@@ -363,10 +380,87 @@ public class ClassCodeGate : MonoBehaviour
 
     void LoadSubjectScene(string subjectName)
     {
+        Debug.Log($"🚀 LoadSubjectScene called with subject: {subjectName}");
+        
         GameplayType type = GameplayType.MultipleChoice;
         if (subjectGameplayTypes.ContainsKey(subjectName))
             type = subjectGameplayTypes[subjectName];
 
+        // Save the current subject for the next scene to use
+        PlayerPrefs.SetString("CurrentSubject", subjectName);
+        PlayerPrefs.SetString("CurrentGameplayType", type.ToString());
+        PlayerPrefs.Save();
+
+        Debug.Log($"Loading assignments for subject '{subjectName}' with type '{type}'");
+
+        // If classroom mode is enabled, try to load assignments from server first
+        if (enableClassroomMode && IsStudentLoggedIn())
+        {
+            Debug.Log($"🌐 Starting coroutine to load assignments from server for {subjectName}");
+            StartCoroutine(LoadAssignmentsForSubject(subjectName, type));
+        }
+        else
+        {
+            Debug.Log($"📱 Loading in offline mode for {subjectName}");
+            // Fallback to direct scene loading for offline mode
+            LoadGameplayScene(subjectName, type);
+        }
+    }
+
+    IEnumerator LoadAssignmentsForSubject(string subjectName, GameplayType type)
+    {
+        UpdateStatus($"Loading assignments for {subjectName}...", Color.yellow);
+        
+        string url = serverURL + "/student/assignments";
+        int studentId = PlayerPrefs.GetInt("StudentID", 1);
+        
+        // Create request to get assignments for this specific subject
+        string jsonData = $"{{\"student_id\":{studentId},\"subject\":\"{subjectName}\"}}";
+        
+        UnityWebRequest request = new UnityWebRequest(url, "POST");
+        byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(jsonData);
+        request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+        request.downloadHandler = new DownloadHandlerBuffer();
+        request.SetRequestHeader("Content-Type", "application/json");
+
+        yield return request.SendWebRequest();
+
+        if (request.result == UnityWebRequest.Result.Success && request.responseCode == 200)
+        {
+            try
+            {
+                string responseText = request.downloadHandler.text;
+                Debug.Log($"✓ Assignments loaded for {subjectName}: {responseText}");
+                
+                // Parse the assignments response
+                // You might want to create a AssignmentsResponse class similar to ClassSubjectsResponse
+                
+                // Save assignment data for the gameplay scene
+                PlayerPrefs.SetString($"Assignments_{subjectName}", responseText);
+                PlayerPrefs.Save();
+                
+                UpdateStatus($"Loading {subjectName} with teacher assignments...", Color.green);
+                LoadGameplayScene(subjectName, type);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Failed to parse assignments for {subjectName}: {e.Message}");
+                UpdateStatus($"Failed to load assignments, using default mode", Color.yellow);
+                LoadGameplayScene(subjectName, type);
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"Failed to load assignments for {subjectName}: {request.error}");
+            UpdateStatus($"No assignments found, loading practice mode for {subjectName}", Color.yellow);
+            LoadGameplayScene(subjectName, type);
+        }
+
+        request.Dispose();
+    }
+
+    void LoadGameplayScene(string subjectName, GameplayType type)
+    {
         string sceneToLoad = GetGameplaySceneName(type);
         Debug.Log($"Loading scene for subject '{subjectName}' with type '{type}' -> scene: '{sceneToLoad}'");
 
@@ -423,6 +517,22 @@ public class ClassCodeGate : MonoBehaviour
         }
         // Always load unlocked stages to ensure proper button states
         LoadUnlockedStages();
+    }
+
+    public void RefreshSubjectsFromServer()
+    {
+        if (!enableClassroomMode)
+        {
+            UpdateStatus("Classroom mode is disabled", Color.red);
+            return;
+        }
+        if (!IsStudentLoggedIn())
+        {
+            UpdateStatus("Please login first", Color.red);
+            return;
+        }
+        // Start the refresh coroutine
+        StartCoroutine(LoadSubjectsFromServer());
     }
 
     void SetupLegacyMode()
@@ -575,6 +685,13 @@ public class ClassCodeGate : MonoBehaviour
             UpdateStatus($"Successfully joined class: {subjectToUnlock}!", Color.green);
             AcceptClassCode(subjectToUnlock, gameplayTypeToSet);
             yield return new WaitForSeconds(1f);
+            
+            // Reload subjects from server to get updated list
+            if (enableClassroomMode && IsStudentLoggedIn())
+            {
+                yield return StartCoroutine(LoadSubjectsFromServer());
+            }
+            
             ShowExistingClasses();
             ShowJoinedClassesInUI();
             yield return new WaitForSeconds(2f);
@@ -646,9 +763,106 @@ public class ClassCodeGate : MonoBehaviour
         unlockedStages.Clear();
         joinedSubjects.Clear();
         subjectGameplayTypes.Clear();
+        
+        // Start coroutine to fetch subjects from server if classroom mode is enabled
+        if (enableClassroomMode && IsStudentLoggedIn())
+        {
+            StartCoroutine(LoadSubjectsFromServer());
+        }
+        else
+        {
+            // Fallback to local PlayerPrefs method
+            LoadSubjectsFromPlayerPrefs();
+        }
+    }
 
+    IEnumerator LoadSubjectsFromServer()
+    {
+        UpdateStatus("Loading your subjects...", Color.yellow);
+        
+        string url = serverURL + "/student/subjects";
+        int studentId = PlayerPrefs.GetInt("StudentID", 1);
+        
+        string jsonData = $"{{\"student_id\":{studentId}}}";
+        
+        UnityWebRequest request = new UnityWebRequest(url, "POST");
+        byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(jsonData);
+        request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+        request.downloadHandler = new DownloadHandlerBuffer();
+        request.SetRequestHeader("Content-Type", "application/json");
+
+        yield return request.SendWebRequest();
+
+        if (request.result == UnityWebRequest.Result.Success && request.responseCode == 200)
+        {
+            try
+            {
+                string responseText = request.downloadHandler.text;
+                Debug.Log($"✓ Subjects loaded from server: {responseText}");
+                
+                ClassSubjectsResponse response = JsonUtility.FromJson<ClassSubjectsResponse>(responseText);
+                
+                // Clear and rebuild the subject lists with server data
+                unlockedStages.Clear();
+                joinedSubjects.Clear();
+                subjectGameplayTypes.Clear();
+                
+                if (response.subjects != null)
+                {
+                    foreach (var subjectData in response.subjects)
+                    {
+                        string subjectName = subjectData.subject_name.Trim();
+                        GameplayType gameplayType = ParseGameplayType(subjectData.gameplay_type);
+                        
+                        unlockedStages.Add(subjectName);
+                        joinedSubjects.Add(subjectName);
+                        subjectGameplayTypes[subjectName] = gameplayType;
+                        
+                        Debug.Log($"✓ Added dynamic subject: '{subjectName}' ({gameplayType})");
+                    }
+                }
+                
+                UpdateStatus($"Loaded {unlockedStages.Count} subjects from your classes", Color.green);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Failed to parse subjects response: {e.Message}");
+                UpdateStatus("Failed to load subjects from server", Color.red);
+                // Fallback to local data
+                LoadSubjectsFromPlayerPrefs();
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"Failed to load subjects from server: {request.error}");
+            UpdateStatus("Loading subjects from local data...", Color.yellow);
+            // Fallback to local data
+            LoadSubjectsFromPlayerPrefs();
+        }
+
+        request.Dispose();
+        
+        // Update UI after loading subjects
+        UpdateStaticSubjectButtons();
+        UpdateStagePanelButtons();
+        
+        // Debug the final state
+        Debug.Log($"=== DYNAMIC SUBJECTS LOADED ===");
+        Debug.Log($"Total subjects: {unlockedStages.Count}");
+        for (int i = 0; i < unlockedStages.Count; i++)
+        {
+            Debug.Log($"  {i + 1}. {unlockedStages[i]} ({subjectGameplayTypes[unlockedStages[i]]})");
+        }
+        if (unlockedStages.Count == 0)
+        {
+            UpdateStatus("No subjects found. Join a class to unlock subjects!", Color.orange);
+        }
+    }
+
+    void LoadSubjectsFromPlayerPrefs()
+    {
         string joinedClasses = PlayerPrefs.GetString("JoinedClasses", "");
-        Debug.Log($"LoadUnlockedStages - JoinedClasses: '{joinedClasses}'");
+        Debug.Log($"LoadSubjectsFromPlayerPrefs - JoinedClasses: '{joinedClasses}'");
 
         if (string.IsNullOrEmpty(joinedClasses))
         {
@@ -732,6 +946,10 @@ public class ClassCodeGate : MonoBehaviour
     {
         // Update existing static buttons based on joined classes
         // If we have more joined subjects than static buttons, we'll show as many as possible
+        
+        Debug.Log($"=== UPDATING STATIC BUTTONS ===");
+        Debug.Log($"Available buttons: {staticSubjectButtons.Count}");
+        Debug.Log($"Joined subjects: {joinedSubjects.Count}");
 
         for (int i = 0; i < staticSubjectButtons.Count; i++)
         {
@@ -749,26 +967,79 @@ public class ClassCodeGate : MonoBehaviour
                 btnText.text = subjectName; // Change button text to the actual subject name
 
                 SetButtonLocked(btn, false); // Unlock the button
+                
+                Debug.Log($"🔍 Button setup - Name: {btn.name}, Interactable: {btn.interactable}, GameObject active: {btn.gameObject.activeInHierarchy}");
+                
+                // Check if there are any raycast blockers
+                GraphicRaycaster raycaster = btn.GetComponentInParent<GraphicRaycaster>();
+                if (raycaster == null)
+                {
+                    Debug.LogWarning($"⚠️ No GraphicRaycaster found in parent hierarchy for button {btn.name}");
+                }
+                else
+                {
+                    Debug.Log($"✓ GraphicRaycaster found for button {btn.name}");
+                }
 
-                // Add click listener to show stage panel
+                // Add click listener to directly load assignments for this subject
                 string capturedSubjectName = subjectName; // Capture for lambda
                 btn.onClick.RemoveAllListeners();
                 btn.onClick.AddListener(() => {
-                    Debug.Log($"Subject button clicked: {capturedSubjectName}");
-                    ShowStagePanel();
+                    Debug.Log($"🔥 BUTTON CLICK DETECTED! Subject: {capturedSubjectName}");
+                    Debug.Log($"🔥 Button interactable: {btn.interactable}");
+                    Debug.Log($"🔥 About to call LoadSubjectScene...");
+                    LoadSubjectScene(capturedSubjectName);
                 });
-                Debug.Log($"Button {i + 1} assigned to subject: {subjectName}");
+                
+                // Update button appearance for unlocked state
+                Image btnImage = btn.GetComponent<Image>();
+                if (btnImage != null)
+                    btnImage.color = Color.white;
+                
+                Debug.Log($"✓ Button {i + 1} assigned to dynamic subject: {subjectName}");
+                
+                // TEST: Add a delayed programmatic click test
+                StartCoroutine(TestButtonClick(btn, capturedSubjectName, 2.0f));
             }
             else
             {
-                // No more subjects to assign - keep original text but lock the button
-                SetButtonLocked(btn, true);
+                // No more subjects to assign - hide this button or show as "Empty"
+                btnText.text = "Empty Slot";
+                btnText.color = new Color(1, 1, 1, 0.3f); // Faded text
+                SetButtonLocked(btn, true); // Lock the button
                 btn.onClick.RemoveAllListeners();
-                Debug.Log($"Button {i + 1} locked (no subject assigned)");
+                
+                Debug.Log($"Button {i + 1} set to empty (no more subjects)");
             }
         }
-
-        Debug.Log($"Updated {staticSubjectButtons.Count} buttons with {joinedSubjects.Count} subjects");
+        
+        // If we have more subjects than buttons, log a warning
+        if (joinedSubjects.Count > staticSubjectButtons.Count)
+        {
+            int extraSubjects = joinedSubjects.Count - staticSubjectButtons.Count;
+            Debug.LogWarning($"Warning: {extraSubjects} subjects cannot be displayed (not enough button slots)");
+            UpdateStatus($"Showing {staticSubjectButtons.Count}/{joinedSubjects.Count} subjects (limited by UI)", Color.yellow);
+        }
+        else if (joinedSubjects.Count > 0)
+        {
+            UpdateStatus($"Loaded {joinedSubjects.Count} dynamic subjects", Color.green);
+        }
+    }
+    
+    // Test method to verify button functionality
+    IEnumerator TestButtonClick(Button btn, string subjectName, float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        Debug.Log($"🧪 Testing programmatic click for {subjectName} button...");
+        if (btn != null && btn.interactable)
+        {
+            btn.onClick.Invoke();
+            Debug.Log($"🧪 Programmatic click invoked for {subjectName}");
+        }
+        else
+        {
+            Debug.LogError($"🧪 Button test failed - Button null: {btn == null}, Interactable: {btn?.interactable}");
+        }
     }
 
     void SkipClassCode()
@@ -904,13 +1175,6 @@ public class ClassCodeGate : MonoBehaviour
         // Verify it worked
         string verifyAfter = PlayerPrefs.GetString("JoinedClasses", "");
         Debug.Log($"VERIFICATION: JoinedClasses after manual clear: '{verifyAfter}' (should be empty)");
-    }
-
-    // Add this method for easy testing in Inspector
-    [ContextMenu("FORCE CLEAR ALL DATA")]
-    public void ForceClearAllData()
-    {
-        ClearClassData();
     }
 
     // Public method to clear invalid data manually
