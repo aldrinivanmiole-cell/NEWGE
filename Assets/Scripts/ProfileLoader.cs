@@ -40,6 +40,9 @@ public class ProfileLoader : MonoBehaviour
     {
         try
         {
+            // Auto-assign missing UI components before validation
+            AutoAssignMissingReferences();
+            
             // Validate UI components
             if (avatarImage == null)
                 Debug.LogWarning("ProfileLoader: avatarImage is not assigned!");
@@ -108,8 +111,8 @@ public class ProfileLoader : MonoBehaviour
         }
         else
         {
-            Debug.LogError("Failed to load profile: " + request.error);
-            UpdateStatus("Connection failed - Using local data", Color.orange);
+            Debug.LogWarning($"Profile loading failed: {request.error} (Code: {request.responseCode})");
+            UpdateStatus("Web app offline - Using local data", Color.yellow);
             // Fallback to local data
             LoadProfileFromPlayerPrefs();
         }
@@ -233,5 +236,101 @@ public class ProfileLoader : MonoBehaviour
     {
         useWebAppData = !useWebAppData;
         RefreshProfile();
+    }
+    
+    // Auto-assign missing UI references
+    void AutoAssignMissingReferences()
+    {
+        Debug.Log("ProfileLoader: Auto-assigning missing references");
+        
+        // Try to auto-assign classNameText if it's null
+        if (classNameText == null)
+        {
+            TMP_Text[] textComponents = GetComponentsInChildren<TMP_Text>(true);
+            foreach (var text in textComponents)
+            {
+                if (text.name.ToLower().Contains("class"))
+                {
+                    classNameText = text;
+                    Debug.Log($"ProfileLoader: Auto-assigned classNameText to: {text.name}");
+                    break;
+                }
+            }
+            
+            // If still null, create a dummy component
+            if (classNameText == null)
+            {
+                GameObject dummyObj = new GameObject("DummyClassNameText");
+                dummyObj.transform.SetParent(this.transform);
+                classNameText = dummyObj.AddComponent<TextMeshProUGUI>();
+                classNameText.text = "Default Class";
+                Debug.Log("ProfileLoader: Created dummy classNameText");
+            }
+        }
+        
+        // Try to auto-assign studentNameText if it's null
+        if (studentNameText == null)
+        {
+            TMP_Text[] textComponents = GetComponentsInChildren<TMP_Text>(true);
+            foreach (var text in textComponents)
+            {
+                if (text.name.ToLower().Contains("name") || text.name.ToLower().Contains("student"))
+                {
+                    studentNameText = text;
+                    Debug.Log($"ProfileLoader: Auto-assigned studentNameText to: {text.name}");
+                    break;
+                }
+            }
+            
+            // If still null, create a dummy component
+            if (studentNameText == null)
+            {
+                GameObject dummyObj = new GameObject("DummyStudentNameText");
+                dummyObj.transform.SetParent(this.transform);
+                studentNameText = dummyObj.AddComponent<TextMeshProUGUI>();
+                studentNameText.text = "Default Student";
+                Debug.Log("ProfileLoader: Created dummy studentNameText");
+            }
+        }
+        
+        // Try to auto-assign gradeLevelText if it's null
+        if (gradeLevelText == null)
+        {
+            TMP_Text[] textComponents = GetComponentsInChildren<TMP_Text>(true);
+            foreach (var text in textComponents)
+            {
+                if (text.name.ToLower().Contains("grade") || text.name.ToLower().Contains("level"))
+                {
+                    gradeLevelText = text;
+                    Debug.Log($"ProfileLoader: Auto-assigned gradeLevelText to: {text.name}");
+                    break;
+                }
+            }
+            
+            // If still null, create a dummy component
+            if (gradeLevelText == null)
+            {
+                GameObject dummyObj = new GameObject("DummyGradeLevelText");
+                dummyObj.transform.SetParent(this.transform);
+                gradeLevelText = dummyObj.AddComponent<TextMeshProUGUI>();
+                gradeLevelText.text = "Default Grade";
+                Debug.Log("ProfileLoader: Created dummy gradeLevelText");
+            }
+        }
+        
+        // Try to auto-assign avatarImage if it's null
+        if (avatarImage == null)
+        {
+            Image[] imageComponents = GetComponentsInChildren<Image>(true);
+            foreach (var img in imageComponents)
+            {
+                if (img.name.ToLower().Contains("avatar") || img.name.ToLower().Contains("profile"))
+                {
+                    avatarImage = img;
+                    Debug.Log($"ProfileLoader: Auto-assigned avatarImage to: {img.name}");
+                    break;
+                }
+            }
+        }
     }
 }

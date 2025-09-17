@@ -93,14 +93,14 @@ public class InputFieldGameManager : BaseGameManager
             submitAnswerButton.interactable = true;
             submitAnswerButton.enabled = true;
 
-            // FORCE SUBMIT BUTTON TEXT
+            // REMOVE HARDCODED SUBMIT BUTTON TEXT
             TMP_Text submitButtonText = submitAnswerButton.GetComponentInChildren<TMP_Text>();
             if (submitButtonText != null)
             {
-                submitButtonText.text = "SUBMIT";
+                submitButtonText.text = ""; // No hardcoded text allowed
                 submitButtonText.color = Color.white;
                 submitButtonText.raycastTarget = false;
-                Debug.Log($"Submit Button Text set to: '{submitButtonText.text}'");
+                Debug.Log("Submit Button Text cleared - no hardcoded content allowed");
             }
             else
             {
@@ -137,14 +137,14 @@ public class InputFieldGameManager : BaseGameManager
             clearAnswersButton.interactable = true;
             clearAnswersButton.enabled = true;
 
-            // FORCE CLEAR BUTTON TEXT
+            // REMOVE HARDCODED CLEAR BUTTON TEXT
             TMP_Text clearButtonText = clearAnswersButton.GetComponentInChildren<TMP_Text>();
             if (clearButtonText != null)
             {
-                clearButtonText.text = "CLEAR";
+                clearButtonText.text = ""; // No hardcoded text allowed
                 clearButtonText.color = Color.white;
                 clearButtonText.raycastTarget = false;
-                Debug.Log($"Clear Button Text set to: '{clearButtonText.text}'");
+                Debug.Log("Clear Button Text cleared - no hardcoded content allowed");
             }
             else
             {
@@ -404,7 +404,7 @@ public class InputFieldGameManager : BaseGameManager
                 buttonImage.color = color;
             }
 
-            // DO NOT CHANGE BUTTON TEXT - Keep it as "SUBMIT"
+            // Button text remains empty - no hardcoded content allowed
             Debug.Log($"Submit button interactivity updated: {canSubmit}");
         }
 
@@ -423,7 +423,7 @@ public class InputFieldGameManager : BaseGameManager
                 buttonImage.color = color;
             }
 
-            // DO NOT CHANGE BUTTON TEXT - Keep it as "CLEAR"
+            // Button text remains empty - no hardcoded content allowed
             Debug.Log($"Clear button interactivity updated: {canClear}");
         }
     }
@@ -540,8 +540,8 @@ public class InputFieldGameManager : BaseGameManager
             TMP_Text submitText = submitAnswerButton.GetComponentInChildren<TMP_Text>();
             if (submitText != null)
             {
-                submitText.text = "SUBMIT";
-                Debug.Log("Submit button text forced to 'SUBMIT'");
+                submitText.text = ""; // No hardcoded text allowed
+                Debug.Log("Submit button text cleared - no hardcoded content allowed");
             }
         }
 
@@ -550,8 +550,8 @@ public class InputFieldGameManager : BaseGameManager
             TMP_Text clearText = clearAnswersButton.GetComponentInChildren<TMP_Text>();
             if (clearText != null)
             {
-                clearText.text = "CLEAR";
-                Debug.Log("Clear button text forced to 'CLEAR'");
+                clearText.text = ""; // No hardcoded text allowed
+                Debug.Log("Clear button text cleared - no hardcoded content allowed");
             }
         }
     }

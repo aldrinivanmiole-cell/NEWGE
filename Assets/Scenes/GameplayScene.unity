@@ -2860,37 +2860,25 @@ MonoBehaviour:
   - {fileID: 1880089550}
   - {fileID: 1881338444}
   - {fileID: 1618441068}
-  dropZone: {fileID: 0}
   answerInputField: {fileID: 0}
   submitAnswerButton: {fileID: 0}
-  clearAnswersButton: {fileID: 0}
-  answersDisplayText: {fileID: 0}
-  inputFeedbackText: {fileID: 0}
   questionText: {fileID: 0}
-  maxAnswers: 5
-  minimumAnswersRequired: 3
-  allowDuplicateAnswers: 0
-  caseSensitiveAnswers: 0
   answerToggles: []
   submitToggleButton: {fileID: 0}
-  multipleChoiceFeedbackText: {fileID: 0}
-  passingScorePercentage: 70
-  currentQuestion: 'Name 5 programming languages:'
-  clearAnswersAfterSubmission: 1
-  clearDelay: 1
   progressBar: {fileID: 1297158826}
   textProgress: {fileID: 1580616426}
   resultPanel: {fileID: 1997777749}
-  dialogueAt0: "Let\u2019s begin the challenge!"
-  dialogueAt25: Good start, keep going!
-  dialogueAt50: Halfway there!
-  dialogueAt75: Almost done, stay focused!
-  dialogueAt100: Congratulations, you did it!
-  dialogueText: {fileID: 1386793669}
+  passingScorePercentage: 70
+  currentQuestion: 'Name 5 programming languages:'
   flaskURL: https://homequest-c3k7.onrender.com
   sendToFlask: 1
-  studentId: 1
   assignmentId: 1
+  useClassCodeMode: 1
+  currentClassCode: 
+  playerName: Student1
+  classCodeInput: {fileID: 0}
+  joinClassButton: {fileID: 0}
+  classCodePanel: {fileID: 0}
 --- !u!4 &1468432944
 Transform:
   m_ObjectHideFlags: 0
@@ -2970,6 +2958,7 @@ GameObject:
   - component: {fileID: 1488439400}
   - component: {fileID: 1488439399}
   - component: {fileID: 1488439398}
+  - component: {fileID: 1488439402}
   m_Layer: 5
   m_Name: multiple choice
   m_TagString: Untagged
@@ -3061,6 +3050,60 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0, y: 0}
+--- !u!114 &1488439402
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1488439397}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 99d678cc08d02204ab177c5892e45613, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  gameMode: 2
+  player: {fileID: 1134520288}
+  enemy1: {fileID: 1035454196}
+  attackOffset: 100
+  movementSpeed: 2
+  maleSprite: {fileID: 0}
+  femaleSprite: {fileID: 0}
+  enemySprites: []
+  playerImage: {fileID: 0}
+  enemyImage: {fileID: 0}
+  playerSpeechBubble: {fileID: 755027999}
+  playerSpeechText: {fileID: 531365070}
+  enemySpeechBubble: {fileID: 1411103629}
+  enemySpeechText: {fileID: 1113458549}
+  answerButtons:
+  - {fileID: 510508985}
+  - {fileID: 1880089550}
+  - {fileID: 1881338444}
+  - {fileID: 1618441068}
+  answerInputField: {fileID: 0}
+  submitAnswerButton: {fileID: 0}
+  questionText: {fileID: 0}
+  answerToggles:
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  submitToggleButton: {fileID: 0}
+  progressBar: {fileID: 1297158826}
+  textProgress: {fileID: 1580616426}
+  resultPanel: {fileID: 1997777749}
+  passingScorePercentage: 70
+  currentQuestion: Ready to start your assignment!
+  flaskURL: https://homequest-c3k7.onrender.com
+  sendToFlask: 1
+  assignmentId: 1
+  useClassCodeMode: 1
+  currentClassCode: 
+  playerName: Student1
+  classCodeInput: {fileID: 0}
+  joinClassButton: {fileID: 0}
+  classCodePanel: {fileID: 0}
 --- !u!1 &1552226546
 GameObject:
   m_ObjectHideFlags: 0

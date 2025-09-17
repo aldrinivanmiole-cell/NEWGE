@@ -684,7 +684,7 @@ public class GameStageManager : MonoBehaviour
                     }
                     else
                     {
-                        buttonText.text = "SUBMIT";
+                        buttonText.text = ""; // No hardcoded text allowed
                     }
                 }
             }

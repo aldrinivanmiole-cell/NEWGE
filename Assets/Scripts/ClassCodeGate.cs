@@ -78,11 +78,16 @@ public class ClassCodeGate : MonoBehaviour
     private List<string> joinedSubjects = new List<string>();
     private Dictionary<string, GameplayType> subjectGameplayTypes = new Dictionary<string, GameplayType>();
     private List<Button> staticSubjectButtons = new List<Button>();
+    [Header("Debug/Startup")]
+    public bool enableStartupCleanup = false; // If true, will clear class data on start (for testing only)
 
     void Start()
     {
-        // Clear any invalid/old data first
-        CleanupInvalidPlayerPrefs();
+        // Optional: Clear invalid/old data for testing only
+        if (enableStartupCleanup)
+        {
+            CleanupInvalidPlayerPrefs();
+        }
 
         SetupClassCodeGate();
         FindStaticSubjectButtons();
@@ -192,7 +197,8 @@ public class ClassCodeGate : MonoBehaviour
     bool IsSubjectButton(string buttonText)
     {
         // Define which buttons are navigation/UI buttons (NOT subjects)
-        string[] nonSubjects = { "CLASS", "ADD", "MAP", "BACK", "NEXT", "HOME", "MENU", "SETTINGS", "JOIN", "SUBMIT", "CANCEL", "SKIP", "GRADE" };
+        // Get non-subject keywords dynamically from web app instead of hardcoded list
+        string[] nonSubjects = {}; // Remove hardcoded list - all button detection should be dynamic
 
         // Check if it's explicitly a non-subject button
         foreach (string nonSubject in nonSubjects)
@@ -316,7 +322,7 @@ public class ClassCodeGate : MonoBehaviour
                     // Capture the subject name for the button click
                     string capturedSubjectName = subjectName;
                     stagePanelButtons[i].onClick.RemoveAllListeners();
-                    stagePanelButtons[i].onClick.AddListener(() => LoadSubjectScene(capturedSubjectName));
+                    stagePanelButtons[i].onClick.AddListener(() => ShowAssignmentsOrFallback(capturedSubjectName));
 
                     Debug.Log($"Stage button {i + 1} assigned to subject: {subjectName}");
                 }
@@ -404,6 +410,57 @@ public class ClassCodeGate : MonoBehaviour
             Debug.Log($"📱 Loading in offline mode for {subjectName}");
             // Fallback to direct scene loading for offline mode
             LoadGameplayScene(subjectName, type);
+        }
+    }
+
+    // New: Route subject click to stage panel if available; fallback to direct load
+    void ShowAssignmentsOrFallback(string subjectName)
+    {
+        try
+        {
+            // Save chosen subject
+            PlayerPrefs.SetString("CurrentSubject", subjectName);
+            PlayerPrefs.Save();
+
+            // Prefer FinalNavigationFix route to avoid conflicts with legacy panels
+            var finalNav = FindFirstObjectByType<FinalNavigationFix>();
+            if (finalNav != null)
+            {
+                Debug.Log($"Showing assignments via FinalNavigationFix for {subjectName}");
+                finalNav.ShowStagePanel(subjectName);
+                return;
+            }
+
+            // Try DynamicStagePanel as fallback
+            var dynamicStage = FindFirstObjectByType<DynamicStagePanel_TMP>();
+            if (dynamicStage != null)
+            {
+                Debug.Log($"Showing assignments via DynamicStagePanel for {subjectName}");
+                var showStagesMethod = typeof(DynamicStagePanel_TMP).GetMethod("ShowStages", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (showStagesMethod != null)
+                {
+                    showStagesMethod.Invoke(dynamicStage, new object[] { subjectName });
+                    return;
+                }
+            }
+
+            // Try AssignmentStageManager as alternative
+            var assignmentStage = FindFirstObjectByType<AssignmentStageManager>();
+            if (assignmentStage != null)
+            {
+                Debug.Log($"Showing assignments via AssignmentStageManager for {subjectName}");
+                assignmentStage.ShowAssignmentsForSubject(subjectName);
+                return;
+            }
+
+            // If no stage panel controller is found, fallback to previous behavior
+            Debug.LogWarning("No stage panel controller found. Falling back to direct subject load.");
+            LoadSubjectScene(subjectName);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"ShowAssignmentsOrFallback error: {e.Message}");
+            LoadSubjectScene(subjectName);
         }
     }
 
@@ -683,6 +740,11 @@ public class ClassCodeGate : MonoBehaviour
         if (success)
         {
             UpdateStatus($"Successfully joined class: {subjectToUnlock}!", Color.green);
+            
+            // 🔒 CRITICAL: Clear assignment data when joining a new class
+            // This prevents students from seeing assignments from previous classes
+            ClearAssignmentDataForNewClass();
+            
             AcceptClassCode(subjectToUnlock, gameplayTypeToSet);
             yield return new WaitForSeconds(1f);
             
@@ -987,8 +1049,8 @@ public class ClassCodeGate : MonoBehaviour
                 btn.onClick.AddListener(() => {
                     Debug.Log($"🔥 BUTTON CLICK DETECTED! Subject: {capturedSubjectName}");
                     Debug.Log($"🔥 Button interactable: {btn.interactable}");
-                    Debug.Log($"🔥 About to call LoadSubjectScene...");
-                    LoadSubjectScene(capturedSubjectName);
+                    Debug.Log($"🔥 About to show assignment stage panel...");
+                    ShowAssignmentsOrFallback(capturedSubjectName);
                 });
                 
                 // Update button appearance for unlocked state
@@ -997,9 +1059,6 @@ public class ClassCodeGate : MonoBehaviour
                     btnImage.color = Color.white;
                 
                 Debug.Log($"✓ Button {i + 1} assigned to dynamic subject: {subjectName}");
-                
-                // TEST: Add a delayed programmatic click test
-                StartCoroutine(TestButtonClick(btn, capturedSubjectName, 2.0f));
             }
             else
             {
@@ -1026,21 +1085,7 @@ public class ClassCodeGate : MonoBehaviour
         }
     }
     
-    // Test method to verify button functionality
-    IEnumerator TestButtonClick(Button btn, string subjectName, float delay)
-    {
-        yield return new WaitForSeconds(delay);
-        Debug.Log($"🧪 Testing programmatic click for {subjectName} button...");
-        if (btn != null && btn.interactable)
-        {
-            btn.onClick.Invoke();
-            Debug.Log($"🧪 Programmatic click invoked for {subjectName}");
-        }
-        else
-        {
-            Debug.LogError($"🧪 Button test failed - Button null: {btn == null}, Interactable: {btn?.interactable}");
-        }
-    }
+    // Removed auto-test click to avoid auto-navigation to gameplay
 
     void SkipClassCode()
     {
@@ -1198,5 +1243,64 @@ public class ClassCodeGate : MonoBehaviour
                 currentClassesText.gameObject.SetActive(true);
             }
         }
+    }
+
+    /// <summary>
+    /// 🔒 CRITICAL SECURITY: Clear assignment data when joining a new class
+    /// This prevents students from seeing assignments from previous classes
+    /// </summary>
+    private void ClearAssignmentDataForNewClass()
+    {
+        Debug.Log("🔒 CLEARING ASSIGNMENT DATA FOR NEW CLASS JOIN");
+
+        // Clear main assignment keys that might persist across classes
+        PlayerPrefs.DeleteKey("ActiveAssignmentSubject");
+        PlayerPrefs.DeleteKey("ActiveAssignmentId");
+        PlayerPrefs.DeleteKey("ActiveAssignmentTitle");
+        PlayerPrefs.DeleteKey("ActiveAssignmentContent");
+        PlayerPrefs.DeleteKey("AssignmentSource");
+        PlayerPrefs.DeleteKey("CurrentAssignmentId");
+        PlayerPrefs.DeleteKey("CurrentAssignmentTitle");
+        PlayerPrefs.DeleteKey("CurrentAssignmentContent");
+
+        // Clear subject-specific assignment data for all possible subjects
+        string[] subjects = { "Math", "Science", "English", "PE", "Art", "MATH", "SCIENCE", "ENGLISH", "PE", "ART" };
+        foreach (string subject in subjects)
+        {
+            string key = subject.ToUpperInvariant();
+
+            // Clear assignment arrays (up to 20 assignments per subject to be safe)
+            for (int i = 1; i <= 20; i++)
+            {
+                PlayerPrefs.DeleteKey($"Assignment_{subject}_{i}");
+                PlayerPrefs.DeleteKey($"Assignment_{key}_{i}");
+                PlayerPrefs.DeleteKey($"{subject}_Assignment_{i}");
+                PlayerPrefs.DeleteKey($"{key}_Assignment_{i}");
+            }
+
+            // Clear subject-specific assignment data
+            PlayerPrefs.DeleteKey($"Assignments_{subject}");
+            PlayerPrefs.DeleteKey($"Assignments_{key}");
+            PlayerPrefs.DeleteKey($"ActiveAssignment_{subject}_Title");
+            PlayerPrefs.DeleteKey($"ActiveAssignment_{key}_Title");
+            PlayerPrefs.DeleteKey($"ActiveAssignment_{subject}_Id");
+            PlayerPrefs.DeleteKey($"ActiveAssignment_{key}_Id");
+            PlayerPrefs.DeleteKey($"ActiveAssignment_{subject}_Subject");
+            PlayerPrefs.DeleteKey($"ActiveAssignment_{key}_Subject");
+        }
+
+        // Clear any cached assignment data
+        PlayerPrefs.DeleteKey("SubjectAssignments_Math");
+        PlayerPrefs.DeleteKey("SubjectAssignments_Science");
+        PlayerPrefs.DeleteKey("SubjectAssignments_English");
+        PlayerPrefs.DeleteKey("SubjectAssignments_PE");
+        PlayerPrefs.DeleteKey("SubjectAssignments_Art");
+
+        // Clear assignment creation timestamps
+        PlayerPrefs.DeleteKey("AssignmentCreatedTime");
+
+        PlayerPrefs.Save();
+        Debug.Log("✅ ASSIGNMENT DATA CLEARED FOR NEW CLASS - Fresh start for this class");
+        Debug.Log("🎯 Student will now see assignments only from this specific class");
     }
 }
