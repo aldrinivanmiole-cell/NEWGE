@@ -637,14 +637,23 @@ public class ClassCodeGate : MonoBehaviour
         // Enhanced validation for classroom mode
         if (enableClassroomMode)
         {
-            int studentId = PlayerPrefs.GetInt("StudentID", 0);
+            // Use dynamic student ID instead of static PlayerPrefs
+            int studentId = PlayerPrefs.GetInt("DynamicStudentID", 1); // Same as GetDynamicStudentID()
             string studentName = GetCurrentStudentName();
 
             Debug.Log($"=== SUBMIT CLASS CODE VALIDATION ===");
             Debug.Log($"Class Code: '{enteredCode}'");
-            Debug.Log($"Student ID: {studentId}");
+            Debug.Log($"Student ID: {studentId} (from DynamicStudentID)");
             Debug.Log($"Student Name: '{studentName}'");
             Debug.Log($"Is Student Logged In: {IsStudentLoggedIn()}");
+
+            // Set the legacy StudentID for compatibility
+            if (studentId > 0)
+            {
+                PlayerPrefs.SetInt("StudentID", studentId);
+                PlayerPrefs.Save();
+                Debug.Log($"✅ Set legacy StudentID to {studentId} for compatibility");
+            }
 
             if (studentId <= 0)
             {

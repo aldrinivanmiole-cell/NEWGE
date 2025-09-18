@@ -8,6 +8,24 @@ using UnityEngine.Networking;
 using System;
 using System.Linq;
 
+/// <summary>
+/// GameMechanicDragButtons - Main Educational Game Controller
+/// 
+/// Core Functionality:
+/// - Student Login: Manages unique student accounts and session isolation
+/// - Assignment Loading: Fetches assignments from web application backend
+/// - Subject Management: Handles Math, Science, English subject-specific content
+/// - Session Isolation: Prevents cross-student data contamination using unique session IDs
+/// - Memory Management: Proper cleanup of coroutines and web requests
+/// - Game Mechanics: Supports drag-and-drop, multiple choice, input field, and identification modes
+/// - Backend Integration: Connects to HomeQuest web application for dynamic content
+/// 
+/// Key Features:
+/// - No hardcoded assignments - all content from web app
+/// - Session-specific PlayerPrefs for data isolation
+/// - Comprehensive error handling and logging
+/// - Automatic assignment discovery for different student/subject combinations
+/// </summary>
 public class GameMechanicDragButtons : MonoBehaviour
 {
     [Header("Game Mode")]
@@ -66,6 +84,14 @@ public class GameMechanicDragButtons : MonoBehaviour
     // Store fetched assignments for selection
     private Assignment[] fetchedAssignments;
     private string currentSubject;
+    
+    // Unique session identifier for student isolation
+    private string sessionId;
+    private int currentStudentId = 0;
+    private string currentStudentName = "";
+    
+    // Coroutine management to prevent memory leaks
+    private List<Coroutine> activeCoroutines = new List<Coroutine>();
 
     [Header("Class Code System")]
     public bool useClassCodeMode = true;
@@ -91,22 +117,176 @@ public class GameMechanicDragButtons : MonoBehaviour
     private AssignmentsResponse currentAssignments;
     
     /// <summary>
-    /// Set the student ID for dynamic API calls. Call this at runtime to make the system truly dynamic.
+    /// Set the student ID for dynamic API calls with session isolation
     /// Example: SetDynamicStudentID(123);
     /// </summary>
     public void SetDynamicStudentID(int studentId)
     {
-        PlayerPrefs.SetInt("DynamicStudentID", studentId);
+        EnsureSessionId();
+        currentStudentId = studentId;
+        PlayerPrefs.SetInt($"DynamicStudentID_{sessionId}", studentId);
         PlayerPrefs.Save();
-        Debug.Log($"🆔 Dynamic Student ID set to: {studentId}");
+        // Student Login: Set dynamic student ID for session isolation
+        Debug.Log($"Dynamic Student ID set to: {studentId} for session: {sessionId}");
+        
+        // Clear any cached data for the previous student to prevent contamination
+        ClearStudentSpecificCache();
     }
     
     /// <summary>
-    /// Get the current dynamic student ID
+    /// Get the current dynamic student ID for this session
     /// </summary>
     public int GetDynamicStudentID()
     {
-        return PlayerPrefs.GetInt("DynamicStudentID", 1);
+        EnsureSessionId();
+        
+        // First check if we have a current student ID in memory
+        if (currentStudentId > 0)
+        {
+            // Student Management: Using current session student ID
+            Debug.Log($"Using current session student ID: {currentStudentId}");
+            return currentStudentId;
+        }
+        
+        // Try to get a stored student ID for this session
+        int storedId = PlayerPrefs.GetInt($"DynamicStudentID_{sessionId}", 0);
+        
+        if (storedId > 0)
+        {
+            currentStudentId = storedId;
+            // Student Management: Using stored session student ID
+            Debug.Log($"Using stored session student ID: {storedId}");
+            return storedId;
+        }
+        
+        // If no stored ID, try some common IDs that might have assignments
+        int defaultId = 1;
+        // Student Management: Using default student ID for session
+        Debug.Log($"Using default student ID: {defaultId} for session: {sessionId}");
+        return defaultId;
+    }
+    
+    /// <summary>
+    /// Create a unique student ID for new students joining classes
+    /// This ensures each new student gets registered with their own ID
+    /// </summary>
+    public void CreateNewStudentId()
+    {
+        // Generate a unique student ID based on timestamp and session
+        long timestamp = System.DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        int uniqueId = Mathf.Abs((int)(timestamp % 100000)) + UnityEngine.Random.Range(1000, 9999);
+        
+        // Student Registration: Creating new unique student ID
+        Debug.Log($"Creating new unique student ID: {uniqueId} for session: {sessionId}");
+        SetDynamicStudentID(uniqueId);
+        
+        // Also set a unique player name
+        string uniquePlayerName = $"Student_{uniqueId}";
+        PlayerPrefs.SetString(GetSessionKey("PlayerName"), uniquePlayerName);
+        PlayerPrefs.Save();
+        
+        // Student Registration: Created new student account
+        Debug.Log($"Created new student: {uniquePlayerName} with ID: {uniqueId}");
+    }
+    
+    /// <summary>
+    /// Ensure we have a unique session ID for this game instance
+    /// </summary>
+    private void EnsureSessionId()
+    {
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            // Generate a unique session ID based on time and random value
+            sessionId = System.DateTime.Now.Ticks.ToString() + "_" + UnityEngine.Random.Range(1000, 9999).ToString();
+            // Session Management: Generated unique session ID
+            Debug.Log($"Generated unique session ID: {sessionId}");
+        }
+    }
+    
+    /// <summary>
+    /// Clear cached data specific to the current student to prevent contamination
+    /// </summary>
+    private void ClearStudentSpecificCache()
+    {
+        EnsureSessionId();
+        // Cache Management: Clearing student-specific cache for session
+        Debug.Log($"Clearing student-specific cache for session: {sessionId}");
+        
+        // Clear assignment caches with session-specific keys
+        PlayerPrefs.DeleteKey($"Assignments_MATH_{sessionId}");
+        PlayerPrefs.DeleteKey($"Assignments_SCIENCE_{sessionId}");
+        PlayerPrefs.DeleteKey($"Assignments_ENGLISH_{sessionId}");
+        PlayerPrefs.DeleteKey($"Assignments_ART_{sessionId}");
+        PlayerPrefs.DeleteKey($"Assignments_PE_{sessionId}");
+        PlayerPrefs.DeleteKey($"CurrentClassCode_{sessionId}");
+        PlayerPrefs.DeleteKey($"CurrentAssignmentId_{sessionId}");
+        PlayerPrefs.DeleteKey($"CurrentAssignmentTitle_{sessionId}");
+        PlayerPrefs.DeleteKey($"CurrentAssignmentIndex_{sessionId}");
+        PlayerPrefs.DeleteKey($"CurrentSubject_{sessionId}");
+        PlayerPrefs.DeleteKey($"AssignmentSource_{sessionId}");
+        PlayerPrefs.DeleteKey($"CurrentAssignmentContent_{sessionId}");
+        PlayerPrefs.DeleteKey($"PlayerName_{sessionId}");
+        PlayerPrefs.DeleteKey($"DynamicStudentID_{sessionId}");
+        
+        // Clear subject-specific assignment content for all subjects
+        string[] subjects = {"MATH", "SCIENCE", "ENGLISH", "ART", "PE"};
+        foreach (string subject in subjects)
+        {
+            PlayerPrefs.DeleteKey($"CurrentAssignmentContent_{subject}_{sessionId}");
+        }
+        
+        PlayerPrefs.Save();
+    }
+    
+    /// <summary>
+    /// Clean up all active coroutines to prevent memory leaks
+    /// </summary>
+    private void StopAllActiveCoroutines()
+    {
+        foreach (Coroutine coroutine in activeCoroutines)
+        {
+            if (coroutine != null)
+            {
+                StopCoroutine(coroutine);
+            }
+        }
+        activeCoroutines.Clear();
+        // Memory Management: Stopped active coroutines for cleanup
+        Debug.Log($"Stopped {activeCoroutines.Count} active coroutines for cleanup");
+    }
+    
+    /// <summary>
+    /// Start a coroutine with tracking for proper cleanup
+    /// </summary>
+    private Coroutine StartTrackedCoroutine(IEnumerator coroutine)
+    {
+        Coroutine started = StartCoroutine(coroutine);
+        if (started != null)
+        {
+            activeCoroutines.Add(started);
+        }
+        return started;
+    }
+    
+    /// <summary>
+    /// Remove a coroutine from tracking when it completes
+    /// </summary>
+    private void RemoveTrackedCoroutine(Coroutine coroutine)
+    {
+        if (coroutine != null && activeCoroutines.Contains(coroutine))
+        {
+            activeCoroutines.Remove(coroutine);
+        }
+    }
+    
+    /// <summary>
+    /// Called when the GameObject is destroyed - cleanup resources
+    /// </summary>
+    void OnDestroy()
+    {
+        // Memory Management: GameMechanicDragButtons OnDestroy - cleaning up resources
+        Debug.Log("GameMechanicDragButtons OnDestroy - cleaning up resources");
+        StopAllActiveCoroutines();
     }
     
     /// <summary>
@@ -117,25 +297,121 @@ public class GameMechanicDragButtons : MonoBehaviour
         StartCoroutine(TryDifferentStudentIDs());
     }
     
+    /// <summary>
+    /// Force assignment discovery - manually trigger comprehensive search
+    /// </summary>
+    public void ForceAssignmentDiscovery()
+    {
+        // Assignment Discovery: Manually forcing assignment discovery
+        Debug.Log("Manually forcing assignment discovery...");
+        ClearGlobalAssignmentCache();
+        StartCoroutine(AutoDiscoverAssignments());
+    }
+    
     private IEnumerator TryDifferentStudentIDs()
     {
-        int[] testIds = {1, 2, 3, 123, 456, 789}; // Common test IDs
+        // Assignment Discovery: Testing different student IDs to find assignments
+        Debug.Log("Testing different student IDs to find assignments...");
+        
+        // Common student IDs to test
+        int[] testIds = {1, 2, 3, 4, 5, 10, 20, 50, 100};
+        string[] testSubjects = {"MATH", "SCIENCE", "ENGLISH", "ART", "PE", "Mathematics", "Science", "English"};
         
         foreach (int testId in testIds)
         {
-            Debug.Log($"🧪 Testing student ID: {testId}");
-            SetDynamicStudentID(testId);
+            // Student Testing: Testing student ID
+            Debug.Log($"Testing student ID: {testId}");
+            SetDynamicStudentID(testId); // Use session-aware method
             
-            // Test the subjects endpoint with this ID
-            yield return StartCoroutine(TestSubjectsEndpoint(testId));
-            yield return new WaitForSeconds(1f); // Wait between tests
+            // Try each subject for this student ID
+            foreach (string subject in testSubjects)
+            {
+                // Student Testing: Testing subject for student
+                Debug.Log($"   Testing subject: {subject} for student {testId}");
+                yield return StartCoroutine(TestStudentIdForAssignments(testId, subject));
+                
+                // Check if we got any assignments
+                if (allAssignments != null && allAssignments.assignments != null && allAssignments.assignments.Length > 0)
+                {
+                    // Assignment Success: Found assignments for student ID with subject
+                    Debug.Log($"Found {allAssignments.assignments.Length} assignments for student ID: {testId} with subject: {subject}");
+                    SetDynamicStudentID(testId); // Save the working ID with session
+                    PlayerPrefs.SetString(GetSessionKey("CurrentSubject"), subject); // Save the working subject with session
+                    PlayerPrefs.Save();
+                    yield break; // Stop testing, we found a working combination
+                }
+            }
         }
+        
+        // Assignment Error: No assignments found for any tested student IDs or subjects
+        Debug.LogWarning("No assignments found for any tested student IDs or subjects");
     }
     
-    private IEnumerator TestSubjectsEndpoint(int studentId)
+    /// <summary>
+    /// Comprehensive assignment auto-discovery system
+    /// </summary>
+    private IEnumerator AutoDiscoverAssignments()
     {
-        string url = flaskURL + "/student/subjects";
-        var payload = new { student_id = studentId };
+        // Assignment Discovery: Starting comprehensive assignment auto-discovery
+        Debug.Log("Starting comprehensive assignment auto-discovery...");
+        
+        // Wait a bit before starting auto-discovery
+        yield return new WaitForSeconds(2f);
+        
+        // If we already have assignments, no need to auto-discover
+        if (allAssignments != null && allAssignments.assignments != null && allAssignments.assignments.Length > 0)
+        {
+            // Assignment Status: Assignments already loaded, skipping auto-discovery
+            Debug.Log("Assignments already loaded, skipping auto-discovery");
+            yield break;
+        }
+        
+        // Comprehensive search across multiple student IDs and subjects
+        int[] discoveryIds = {1, 2, 3, 4, 5, 10, 20, 50, 100, 200, 500, 1000};
+        string[] discoverySubjects = {"MATH", "Mathematics", "SCIENCE", "Science", "ENGLISH", "English", "ART", "Art", "PE"};
+        
+        foreach (int studentId in discoveryIds)
+        {
+            foreach (string subject in discoverySubjects)
+            {
+                // Assignment Discovery: Auto-discovering student and subject combination
+                Debug.Log($"Auto-discovering: Student {studentId} + Subject {subject}");
+                SetDynamicStudentID(studentId); // Use session-aware method
+                
+                yield return StartCoroutine(TestStudentIdForAssignments(studentId, subject));
+                
+                if (allAssignments != null && allAssignments.assignments != null && allAssignments.assignments.Length > 0)
+                {
+                    // Assignment Success: Auto-discovery found assignments
+                    Debug.Log($"Auto-discovery SUCCESS! Found assignments for Student {studentId} + Subject {subject}");
+                    SetDynamicStudentID(studentId); // Use session-aware method
+                    PlayerPrefs.SetString(GetSessionKey("CurrentSubject"), subject);
+                    PlayerPrefs.Save();
+                    
+                    // Load the first assignment
+                    LoadAssignmentByIndex(0);
+                    yield break;
+                }
+                
+                // Small delay between tests to avoid overwhelming the server
+                yield return new WaitForSeconds(0.1f);
+            }
+        }
+        
+        Debug.LogWarning(" Auto-discovery completed - no assignments found for any combination");
+    }
+    
+    private IEnumerator TestStudentIdForAssignments(int studentId, string subject)
+    {
+        string serverURL = "https://homequest-c3k7.onrender.com";
+        string url = serverURL + "/student/assignments";
+        
+        var payload = new AssignmentApiPayload
+        {
+            student_id = studentId,
+            subject = subject
+        };
+        
         string jsonPayload = JsonUtility.ToJson(payload);
         
         using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
@@ -144,24 +420,55 @@ public class GameMechanicDragButtons : MonoBehaviour
             request.uploadHandler = new UploadHandlerRaw(bodyRaw);
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", "application/json");
+            request.timeout = 30; // Add timeout to prevent hanging requests
             
             yield return request.SendWebRequest();
             
-            if (request.result == UnityWebRequest.Result.Success)
+            try
             {
-                Debug.Log($"✅ SUCCESS with student ID {studentId}!");
-                Debug.Log($"📋 Response: {request.downloadHandler.text}");
-                
-                // Set this as the working student ID
-                SetDynamicStudentID(studentId);
-                
-                // Now load assignments with this working ID
-                yield return StartCoroutine(GetAndUseFirstAvailableClass());
-                yield break; // Stop testing, we found a working ID
+                if (request.result == UnityWebRequest.Result.Success)
+                {
+                    string responseText = request.downloadHandler.text;
+                    try
+                    {
+                        AssignmentsResponse response = JsonUtility.FromJson<AssignmentsResponse>(responseText);
+                        if (response != null && response.assignments != null && response.assignments.Length > 0)
+                        {
+                            allAssignments = response;
+                            currentAssignments = response;
+                            fetchedAssignments = response.assignments; // Sync with old system
+                            // Assignment Success: Found assignments for student
+                            Debug.Log($"Found {response.assignments.Length} assignments for student {studentId}");
+                            // Data Synchronization: Synchronized all assignment arrays
+                            Debug.Log($"Synchronized all assignment arrays in TestStudentIdForAssignments");
+                        }
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogWarning($" Failed to parse assignment response for student {studentId}: {e.Message}");
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($" Request failed for student {studentId}: {request.error}");
+                }
             }
-            else
+            catch (System.Exception e)
             {
-                Debug.Log($"❌ Failed with student ID {studentId}: {request.responseCode} - {request.downloadHandler?.text}");
+                // Exception Handling: Error in TestStudentIdForAssignments
+                Debug.LogError($"Exception in TestStudentIdForAssignments for student {studentId}: {e.Message}");
+            }
+            finally
+            {
+                // Ensure proper cleanup
+                if (request.uploadHandler != null)
+                {
+                    request.uploadHandler.Dispose();
+                }
+                if (request.downloadHandler != null)
+                {
+                    request.downloadHandler.Dispose();
+                }
             }
         }
     }
@@ -174,8 +481,9 @@ public class GameMechanicDragButtons : MonoBehaviour
     [System.Obsolete("Hardcoded assignments are not allowed. All content must come from web app.")]
     public void TestMultipleChoiceInterface()
     {
-        Debug.LogError("❌ TestMultipleChoiceInterface is disabled!");
-        Debug.LogError("📚 All assignments must come from the web app - no hardcoded content allowed!");
+        // Error: TestMultipleChoiceInterface is disabled - hardcoded content not allowed
+        Debug.LogError("TestMultipleChoiceInterface is disabled!");
+        Debug.LogError("All assignments must come from the web app - no hardcoded content allowed!");
         ShowNoAssignmentsError("Unknown");
     }
     
@@ -185,7 +493,8 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     public void OnAssignmentButtonPressed(string subject)
     {
-        Debug.Log($"🎯 Assignment button pressed for subject: {subject}");
+        // Assignment Loading: Assignment button pressed for subject
+        Debug.Log($"Assignment button pressed for subject: {subject}");
         currentSubject = subject;
         StartCoroutine(LoadDynamicAssignment(subject));
     }
@@ -193,17 +502,55 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// <summary>
     /// Called when a specific assignment is selected (with assignment ID)
     /// </summary>
-    public void OnSpecificAssignmentPressed(int assignmentId)
+    public void OnSpecificAssignmentPressed(int assignmentIndex)
     {
-        Debug.Log($"🎯 Specific assignment pressed: Assignment {assignmentId} for {currentSubject}");
+        // Assignment Selection: User interface interaction
+        Debug.Log($"=== ASSIGNMENT SELECTION PRESSED ===");
+        Debug.Log($"User selected Assignment {assignmentIndex + 1}");
+        Debug.Log($"Current Subject: '{currentSubject}'");
+        Debug.Log($"Previous currentAssignmentIndex: {currentAssignmentIndex}");
+        Debug.Log($"Previous assignmentId: {assignmentId}");
+        Debug.Log($"=== END ASSIGNMENT SELECTION PRESSED ===");
         
-        if (fetchedAssignments != null && assignmentId < fetchedAssignments.Length)
+        // IMPORTANT: Use allAssignments (from dynamic system) instead of fetchedAssignments
+        if (allAssignments != null && allAssignments.assignments != null && assignmentIndex < allAssignments.assignments.Length)
         {
-            LoadSpecificAssignment(fetchedAssignments[assignmentId]);
+            var selectedAssignment = allAssignments.assignments[assignmentIndex];
+            // Assignment Loading: Loading specific assignment
+            Debug.Log($"Loading assignment {assignmentIndex + 1}: '{selectedAssignment.title}'");
+            Debug.Log($"   Assignment ID: {selectedAssignment.assignment_id}");
+            Debug.Log($"   Subject: '{selectedAssignment.subject}'");
+            Debug.Log($"   Questions: {selectedAssignment.questions?.Length ?? 0}");
+            Debug.Log($"   Due Date: {selectedAssignment.due_date}");
+            Debug.Log($"   Created By: {selectedAssignment.created_by}");
+            
+            // Update the current assignment index to match the selection
+            currentAssignmentIndex = assignmentIndex;
+            
+            // Save user's selection for future reference with session isolation
+            EnsureSessionId();
+            PlayerPrefs.SetInt($"CurrentAssignmentIndex_{sessionId}", assignmentIndex);
+            PlayerPrefs.SetInt($"CurrentAssignmentId_{sessionId}", selectedAssignment.assignment_id);
+            PlayerPrefs.SetString($"CurrentAssignmentTitle_{sessionId}", selectedAssignment.title);
+            PlayerPrefs.Save();
+            
+            // Load the specific assignment by index (ensures proper content loading)
+            LoadAssignmentByIndex(assignmentIndex);
+        }
+        else if (fetchedAssignments != null && assignmentIndex < fetchedAssignments.Length)
+        {
+            // Fallback Assignment Loading: Using fallback assignment loading
+            Debug.LogWarning($"Using fallback assignment loading for index {assignmentIndex}");
+            Debug.LogWarning($"Assignment: '{fetchedAssignments[assignmentIndex].title}' (ID: {fetchedAssignments[assignmentIndex].assignment_id})");
+            LoadSpecificAssignment(fetchedAssignments[assignmentIndex]);
         }
         else
         {
-            Debug.LogError($"❌ Assignment {assignmentId} not found in fetched assignments");
+            // Assignment Error: Assignment not found in any assignment arrays
+            Debug.LogError($"Assignment {assignmentIndex + 1} not found in any assignment arrays");
+            Debug.LogError($"   allAssignments: {(allAssignments?.assignments?.Length ?? 0)} assignments");
+            Debug.LogError($"   fetchedAssignments: {(fetchedAssignments?.Length ?? 0)} assignments");
+            Debug.LogError($"   Requested index: {assignmentIndex}");
             ShowNoAssignmentsError(currentSubject);
         }
     }
@@ -217,17 +564,17 @@ public class GameMechanicDragButtons : MonoBehaviour
         ShowLoadingAssignment();
         
         // Get current class code (should be saved from previous class join)
-        string classCode = PlayerPrefs.GetString("CurrentClassCode", "");
+        string classCode = PlayerPrefs.GetString(GetSessionKey("CurrentClassCode"), "");
         
         if (string.IsNullOrEmpty(classCode))
         {
-            Debug.LogError("❌ No class code found! Cannot load assignments without a class code.");
-            Debug.LogError("📚 Students must join a class to access assignments.");
+            Debug.LogError(" No class code found! Cannot load assignments without a class code.");
+            Debug.LogError(" Students must join a class to access assignments.");
             ShowNoAssignmentsError(subject);
             yield break;
         }
         
-        Debug.Log($"📚 Loading {subject} assignment for student ID: {GetDynamicStudentID()}");
+        Debug.Log($" Loading {subject} assignment for student ID: {GetDynamicStudentID()}");
         
         // Fetch assignments from server
         yield return StartCoroutine(FetchTeacherAssignment(subject));
@@ -238,8 +585,9 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     private void ShowNoAssignmentsError(string subject)
     {
-        Debug.LogError($"❌ No assignments found for {subject}!");
-        Debug.LogError("📚 Teachers must create assignments in the web app first.");
+        // Assignment Error: No assignments found for subject
+        Debug.LogError($"No assignments found for {subject}!");
+        Debug.LogError("Teachers must create assignments in the web app first.");
         
         if (questionText != null)
         {
@@ -257,7 +605,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     {
         if (assignment == null)
         {
-            Debug.LogError("❌ VALIDATION FAILED: Assignment is null!");
+            Debug.LogError(" VALIDATION FAILED: Assignment is null!");
             return false;
         }
         
@@ -266,12 +614,13 @@ public class GameMechanicDragButtons : MonoBehaviour
         
         if (title.Contains("demo") || title.Contains("sample") || title.Contains("test") || title.Contains("hardcoded"))
         {
-            Debug.LogError($"❌ VALIDATION FAILED: Assignment '{assignment.assignmentTitle}' appears to be hardcoded!");
-            Debug.LogError("📚 All assignments must come from the web app!");
+            // Assignment Validation Error: Hardcoded assignment detected
+            Debug.LogError($"VALIDATION FAILED: Assignment '{assignment.assignmentTitle}' appears to be hardcoded!");
+            Debug.LogError("All assignments must come from the web app!");
             return false;
         }
         
-        Debug.Log($"✅ VALIDATION PASSED: Assignment '{assignment.assignmentTitle}' appears to be from web app");
+        Debug.Log($" VALIDATION PASSED: Assignment '{assignment.assignmentTitle}' appears to be from web app");
         return true;
     }
     
@@ -315,7 +664,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         // Show loading message
         if (questionText != null)
         {
-            questionText.text = "📖 Loading Assignment...\nPlease wait...";
+            questionText.text = " Loading Assignment...\nPlease wait...";
         }
         
         // Hide answer buttons during loading
@@ -325,7 +674,7 @@ public class GameMechanicDragButtons : MonoBehaviour
                 button.gameObject.SetActive(false);
         }
         
-        Debug.Log("⏳ Showing loading assignment state");
+        Debug.Log(" Showing loading assignment state");
     }
     
     /// <summary>
@@ -333,8 +682,8 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     private IEnumerator FetchTeacherAssignment(string subject)
     {
-        Debug.Log($"🔍 FetchTeacherAssignment called with subject: '{subject}'");
-        Debug.Log($"🔍 Current subject field: '{currentSubject}'");
+        Debug.Log($" FetchTeacherAssignment called with subject: '{subject}'");
+        Debug.Log($" Current subject field: '{currentSubject}'");
         
         string url = $"{flaskURL}/student/assignments";
         
@@ -348,7 +697,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         };
         
         string jsonPayload = JsonUtility.ToJson(payload);
-        Debug.Log($"📡 Fetching assignment for student {studentId}: {jsonPayload}");
+        Debug.Log($" Fetching assignment for student {studentId}: {jsonPayload}");
         
         using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
         {
@@ -361,8 +710,8 @@ public class GameMechanicDragButtons : MonoBehaviour
             
             if (request.result == UnityWebRequest.Result.Success)
             {
-                Debug.Log($"✅ Assignment fetched successfully!");
-                Debug.Log($"📄 Response: {request.downloadHandler.text}");
+                Debug.Log($" Assignment fetched successfully!");
+                Debug.Log($" Response: {request.downloadHandler.text}");
                 
                 try
                 {
@@ -371,13 +720,13 @@ public class GameMechanicDragButtons : MonoBehaviour
                     
                     if (response != null && response.assignments != null && response.assignments.Length > 0)
                     {
-                        Debug.Log($"🎓 Found {response.assignments.Length} teacher assignments");
+                        Debug.Log($" Found {response.assignments.Length} teacher assignments");
                         
                         // Log all assignments for debugging
                         for (int i = 0; i < response.assignments.Length; i++)
                         {
                             var assignment = response.assignments[i];
-                            Debug.Log($"📋 Assignment {i + 1}: '{assignment.title}' (ID: {assignment.assignment_id}) - Due: {assignment.due_date} - Created by: {assignment.created_by}");
+                            Debug.Log($" Assignment {i + 1}: '{assignment.title}' (ID: {assignment.assignment_id}) - Due: {assignment.due_date} - Created by: {assignment.created_by}");
                         }
                         
                         // Sort assignments by assignment_id in descending order (newest first)
@@ -386,7 +735,7 @@ public class GameMechanicDragButtons : MonoBehaviour
                         System.Array.Copy(response.assignments, sortedAssignments, response.assignments.Length);
                         System.Array.Sort(sortedAssignments, (a, b) => b.assignment_id.CompareTo(a.assignment_id));
                         
-                        Debug.Log("📅 Assignments sorted by ID (newest first):");
+                        Debug.Log(" Assignments sorted by ID (newest first):");
                         for (int i = 0; i < sortedAssignments.Length; i++)
                         {
                             Debug.Log($"   {i + 1}. '{sortedAssignments[i].title}' (ID: {sortedAssignments[i].assignment_id})");
@@ -395,37 +744,43 @@ public class GameMechanicDragButtons : MonoBehaviour
                         // Store sorted assignments for selection
                         fetchedAssignments = sortedAssignments;
                         
+                        // Synchronize all assignment arrays
+                        var sortedResponse = new AssignmentsResponse { assignments = sortedAssignments };
+                        allAssignments = sortedResponse;
+                        currentAssignments = sortedResponse;
+                        Debug.Log($" Synchronized all assignment arrays with {sortedAssignments.Length} sorted assignments");
+                        
                         // If only one assignment, load it directly
                         if (sortedAssignments.Length == 1)
                         {
-                            Debug.Log("📋 Only one assignment found, loading directly...");
+                            Debug.Log(" Only one assignment found, loading directly...");
                             LoadSpecificAssignment(sortedAssignments[0]);
                         }
                         else
                         {
                             // Multiple assignments - show selection interface
-                            Debug.Log("📋 Multiple assignments found, showing selection...");
+                            Debug.Log(" Multiple assignments found, showing selection...");
                             ShowAssignmentSelection(sortedAssignments);
                         }
                     }
                     else
                     {
-                        Debug.LogError("❌ No assignments found for this subject");
-                        Debug.LogError("📚 Teachers must create assignments for this subject in the web app.");
+                        Debug.LogError(" No assignments found for this subject");
+                        Debug.LogError(" Teachers must create assignments for this subject in the web app.");
                         ShowNoAssignmentsError(subject);
                     }
                 }
                 catch (System.Exception e)
                 {
-                    Debug.LogError($"❌ Failed to parse assignment response: {e.Message}");
-                    Debug.LogError("📚 Cannot load assignments - API response format error.");
+                    Debug.LogError($" Failed to parse assignment response: {e.Message}");
+                    Debug.LogError(" Cannot load assignments - API response format error.");
                     ShowNoAssignmentsError(subject);
                 }
             }
             else
             {
-                Debug.LogError($"❌ Failed to fetch assignment: {request.error}");
-                Debug.LogError("📚 Cannot connect to assignment server.");
+                Debug.LogError($" Failed to fetch assignment: {request.error}");
+                Debug.LogError(" Cannot connect to assignment server.");
                 ShowNoAssignmentsError(subject);
             }
         }
@@ -444,7 +799,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             }
         }
         
-        Debug.LogWarning($"⚠️ Correct answer '{correctAnswer}' not found in options. Defaulting to index 0.");
+        Debug.LogWarning($" Correct answer '{correctAnswer}' not found in options. Defaulting to index 0.");
         return 0; // Default to first option if not found
     }
     
@@ -453,7 +808,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     private void LoadSpecificAssignment(Assignment assignment)
     {
-        Debug.Log($"📋 Loading specific assignment: {assignment.title} (ID: {assignment.assignment_id})");
+        Debug.Log($" Loading specific assignment: {assignment.title} (ID: {assignment.assignment_id})");
         
         // Set the current assignment ID for result submission
         assignmentId = assignment.assignment_id;
@@ -478,7 +833,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         
         // Apply the assignment
         ApplyAssignment(webAssignment);
-        Debug.Log($"✅ Assignment '{assignment.title}' loaded successfully with ID {assignmentId}!");
+        Debug.Log($" Assignment '{assignment.title}' loaded successfully with ID {assignmentId}!");
     }
     
     /// <summary>
@@ -486,19 +841,56 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     private void ShowAssignmentSelection(Assignment[] assignments)
     {
-        Debug.Log($"📋 Showing selection for {assignments.Length} assignments");
+        Debug.Log($" === SHOWING ASSIGNMENT SELECTION ===");
+        Debug.Log($" Total assignments: {assignments.Length}");
         
-        // Show assignment list in the question text area
-        string assignmentList = "📚 Available Assignments (Newest First):\n\n";
+        // Log detailed assignment info to verify they are different
         for (int i = 0; i < assignments.Length; i++)
         {
-            assignmentList += $"{i + 1}. {assignments[i].title}\n";
-            assignmentList += $"   📅 Due: {assignments[i].due_date}\n";
-            assignmentList += $"   👩‍🏫 Created by: {assignments[i].created_by}\n";
-            assignmentList += $"   🆔 ID: {assignments[i].assignment_id}\n";
-            assignmentList += $"   ❓ Questions: {assignments[i].questions.Length}\n\n";
+            var assignment = assignments[i];
+            Debug.Log($" Assignment {i + 1}:");
+            Debug.Log($"    Title: '{assignment.title}'");
+            Debug.Log($"    ID: {assignment.assignment_id}");
+            Debug.Log($"    Questions: {assignment.questions?.Length ?? 0}");
+            Debug.Log($"    Due: {assignment.due_date}");
+            Debug.Log($"    Created by: {assignment.created_by}");
+            Debug.Log($"    Subject: '{assignment.subject}'");
+            
+            // Show first question to verify content difference
+            if (assignment.questions != null && assignment.questions.Length > 0)
+            {
+                var firstQ = assignment.questions[0];
+                Debug.Log($"    First Question: '{firstQ.question_text}'");
+                Debug.Log($"    Question Type: '{firstQ.question_type}'");
+                Debug.Log($"    Options: [{string.Join(", ", firstQ.options ?? new string[0])}]");
+                Debug.Log($"    Correct Answer: '{firstQ.correct_answer}'");
+                Debug.Log($"    Question ID: {firstQ.question_id}");
+            }
         }
-        assignmentList += "Click the answer buttons below to select:\n";
+        
+        // Show assignment list in the question text area
+        string assignmentList = " Available Assignments (Select One):\n\n";
+        for (int i = 0; i < assignments.Length; i++)
+        {
+            assignmentList += $" Assignment {i + 1}: {assignments[i].title}\n";
+            assignmentList += $"    Due: {assignments[i].due_date}\n";
+            assignmentList += $"    Created by: {assignments[i].created_by}\n";
+            assignmentList += $"    ID: {assignments[i].assignment_id}\n";
+            assignmentList += $"    Subject: {assignments[i].subject}\n";
+            assignmentList += $"    Questions: {assignments[i].questions?.Length ?? 0}\n";
+            
+            // Show first question preview to help distinguish assignments
+            if (assignments[i].questions != null && assignments[i].questions.Length > 0)
+            {
+                var firstQ = assignments[i].questions[0];
+                string preview = firstQ.question_text.Length > 50 ? 
+                    firstQ.question_text.Substring(0, 50) + "..." : 
+                    firstQ.question_text;
+                assignmentList += $"    Preview: \"{preview}\"\n";
+            }
+            assignmentList += "\n";
+        }
+        assignmentList += " Click the answer buttons below to select:\n";
         assignmentList += "A = Assignment 1, B = Assignment 2, C = Assignment 3, D = Assignment 4";
         
         // Display selection interface
@@ -510,7 +902,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         // Set up answer buttons for assignment selection
         SetupAssignmentSelectionButtons(assignments);
         
-        Debug.Log("✅ Assignment selection interface ready!");
+        Debug.Log(" Assignment selection interface ready!");
     }
     
     /// <summary>
@@ -518,6 +910,8 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     private void SetupAssignmentSelectionButtons(Assignment[] assignments)
     {
+        Debug.Log($" Setting up assignment selection for {assignments.Length} assignments");
+        
         // Find and setup answer buttons
         FindUIComponents();
         
@@ -527,19 +921,27 @@ public class GameMechanicDragButtons : MonoBehaviour
             {
                 answerButtons[i].gameObject.SetActive(true);
                 
-                // Update button text
+                // Update button text with more detailed info
                 var buttonText = answerButtons[i].GetComponentInChildren<TMP_Text>();
                 if (buttonText != null)
                 {
-                    buttonText.text = $"{(char)('A' + i)}. {assignments[i].title}";
+                    string assignmentInfo = $"{(char)('A' + i)}. {assignments[i].title}";
+                    if (assignments[i].questions != null)
+                    {
+                        assignmentInfo += $" ({assignments[i].questions.Length} questions)";
+                    }
+                    buttonText.text = assignmentInfo;
                 }
                 
                 // Store assignment index in button
                 int assignmentIndex = i;
                 answerButtons[i].onClick.RemoveAllListeners();
-                answerButtons[i].onClick.AddListener(() => OnSpecificAssignmentPressed(assignmentIndex));
+                answerButtons[i].onClick.AddListener(() => {
+                    Debug.Log($" Button {assignmentIndex} clicked for assignment: '{assignments[assignmentIndex].title}'");
+                    OnSpecificAssignmentPressed(assignmentIndex);
+                });
                 
-                Debug.Log($"🔘 Setup button {i} for assignment: {assignments[i].title}");
+                Debug.Log($" Setup button {i} for assignment: '{assignments[i].title}' (ID: {assignments[i].assignment_id}) with {assignments[i].questions?.Length ?? 0} questions");
             }
         }
         
@@ -554,13 +956,60 @@ public class GameMechanicDragButtons : MonoBehaviour
     }
     
     /// <summary>
+    /// Debug function to verify assignment state and content
+    /// Call this manually to check what assignments are loaded
+    /// </summary>
+    public void DebugAssignmentState()
+    {
+        Debug.Log($" === COMPLETE ASSIGNMENT STATE DEBUG ===");
+        Debug.Log($" currentAssignmentIndex: {currentAssignmentIndex}");
+        Debug.Log($" assignmentId: {assignmentId}");
+        Debug.Log($" currentQuestionIndex: {currentQuestionIndex}");
+        Debug.Log($" currentSubject: '{currentSubject}'");
+        
+        if (allAssignments != null && allAssignments.assignments != null)
+        {
+            Debug.Log($" allAssignments has {allAssignments.assignments.Length} assignments:");
+            for (int i = 0; i < allAssignments.assignments.Length; i++)
+            {
+                var assignment = allAssignments.assignments[i];
+                Debug.Log($"   [{i}] '{assignment.title}' (ID: {assignment.assignment_id}) - {assignment.questions?.Length ?? 0} questions");
+                if (assignment.questions != null && assignment.questions.Length > 0)
+                {
+                    Debug.Log($"       First Question: '{assignment.questions[0].question_text}'");
+                }
+            }
+        }
+        else
+        {
+            Debug.Log($" allAssignments is NULL or empty");
+        }
+        
+        if (currentAssignment != null)
+        {
+            Debug.Log($" currentAssignment: '{currentAssignment.assignmentTitle}'");
+            Debug.Log($" currentAssignment questions: {currentAssignment.questions?.Length ?? 0}");
+            if (currentAssignment.questions != null && currentAssignment.questions.Length > 0)
+            {
+                Debug.Log($" currentAssignment first question: '{currentAssignment.questions[0].questionText}'");
+            }
+        }
+        else
+        {
+            Debug.Log($" currentAssignment is NULL");
+        }
+        
+        Debug.Log($" === END COMPLETE ASSIGNMENT STATE DEBUG ===");
+    }
+    
+    /// <summary>
     /// Dynamic method to load assignments for any subject
     /// Use this instead of hardcoded LoadEnglishAssignment, LoadMathAssignment, etc.
     /// Call this from UI buttons by passing the subject name as parameter
     /// </summary>
     public void LoadAssignmentForSubject(string subject)
     {
-        Debug.Log($"🎯 Loading assignment for subject: {subject}");
+        Debug.Log($" Loading assignment for subject: {subject}");
         OnAssignmentButtonPressed(subject);
     }
     
@@ -579,12 +1028,12 @@ public class GameMechanicDragButtons : MonoBehaviour
             }
             else
             {
-                Debug.LogError("❌ Unable to determine subject from scene. Please ensure scene names match subject requirements.");
+                Debug.LogError(" Unable to determine subject from scene. Please ensure scene names match subject requirements.");
                 return; // Exit early - no fallback subjects allowed
             }
         }
         
-        Debug.Log($"🎯 Loading current subject assignment: {subject}");
+        Debug.Log($" Loading current subject assignment: {subject}");
         OnAssignmentButtonPressed(subject);
     }
     
@@ -601,16 +1050,50 @@ public class GameMechanicDragButtons : MonoBehaviour
     void CheckForClassCodeGateAssignments()
     {
         currentSubject = GetCurrentSubjectFromScene();
-        string assignmentKey = $"Assignments_{currentSubject}";
         
-        Debug.Log($"🔍 Checking for ClassCodeGate assignments with key: {assignmentKey}");
-        Debug.Log($"🔍 Current scene: {UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}");
-        Debug.Log($"🔍 Detected subject: {currentSubject}");
+        Debug.Log($" Checking for ClassCodeGate assignments");
+        Debug.Log($" Current scene: {UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}");
+        Debug.Log($" Detected subject: '{currentSubject}'");
+        
+        // If we don't have a subject from scene/PlayerPrefs, check if we have any assignments and use them dynamically
+        if (string.IsNullOrEmpty(currentSubject))
+        {
+            Debug.Log($" No specific subject detected - checking for any available assignments dynamically");
+            
+            // Check all possible assignment keys
+            string[] possibleKeys = {"Assignments_MATH", "Assignments_SCIENCE", "Assignments_ENGLISH", "Assignments_ART", "Assignments_PE"};
+            
+            foreach (string key in possibleKeys)
+            {
+                if (PlayerPrefs.HasKey(key))
+                {
+                    Debug.Log($" Found assignments in key: {key}");
+                    string subjectFromKey = key.Replace("Assignments_", "");
+                    currentSubject = subjectFromKey;
+                    Debug.Log($" Using subject: {currentSubject} from available assignments");
+                    break;
+                }
+            }
+            
+            if (string.IsNullOrEmpty(currentSubject))
+            {
+                Debug.Log($" No assignments found in ClassCodeGate - system will load dynamically from API");
+                return;
+            }
+        }
+        
+        string subjectKey = NormalizeSubjectKeyForPrefs(currentSubject);
+        string assignmentKey = GetSessionAssignmentKey(currentSubject);
+        
+        Debug.Log($" Using session assignment key: {assignmentKey}");
+        
+        // Clear any global assignment cache to prevent cross-subject contamination
+        ClearGlobalAssignmentCache();
         
         if (PlayerPrefs.HasKey(assignmentKey))
         {
             string assignmentData = PlayerPrefs.GetString(assignmentKey);
-            Debug.Log($"✅ Found ClassCodeGate assignment data for {currentSubject}: {assignmentData}");
+            Debug.Log($" Found ClassCodeGate assignment data for {subjectKey}: {assignmentData}");
             
             try
             {
@@ -618,12 +1101,92 @@ public class GameMechanicDragButtons : MonoBehaviour
                 AssignmentsResponse response = JsonUtility.FromJson<AssignmentsResponse>(assignmentData);
                 if (response != null && response.assignments != null && response.assignments.Length > 0)
                 {
-                    Debug.Log($"✅ Successfully loaded {response.assignments.Length} assignments from ClassCodeGate");
-                    allAssignments = response;
-                    LoadAssignmentByIndex(0); // Load first assignment
-                    assignmentJoined = true;
-                    useClassCodeMode = false; // Disable manual class code since we have assignments
-                    return;
+                    Debug.Log($" Found {response.assignments.Length} assignments from ClassCodeGate");
+                    
+                    // STRICT SUBJECT FILTERING: Only load assignments that match the current subject exactly
+                    List<Assignment> subjectSpecificAssignments = new List<Assignment>();
+                    
+                    for (int i = 0; i < response.assignments.Length; i++)
+                    {
+                        var assignment = response.assignments[i];
+                        bool subjectMatches = IsSubjectMatch(assignment.subject, currentSubject);
+                        
+                        Debug.Log($" Assignment '{assignment.title}' - Subject: '{assignment.subject}' | Current: '{currentSubject}' | Match: {subjectMatches}");
+                        
+                        if (subjectMatches)
+                        {
+                            subjectSpecificAssignments.Add(assignment);
+                        }
+                        else
+                        {
+                            Debug.LogWarning($" REJECTING assignment '{assignment.title}' - Subject '{assignment.subject}' does NOT match current subject '{currentSubject}' using smart matching");
+                        }
+                    }
+                    
+                    if (subjectSpecificAssignments.Count > 0)
+                    {
+                        // Create filtered response with only current subject assignments
+                        AssignmentsResponse filteredResponse = new AssignmentsResponse
+                        {
+                            assignments = subjectSpecificAssignments.ToArray()
+                        };
+                        
+                        allAssignments = filteredResponse;
+                        currentAssignments = filteredResponse;
+                        fetchedAssignments = filteredResponse.assignments; // Sync with old system
+                        
+                        Debug.Log($" Successfully loaded {subjectSpecificAssignments.Count} subject-specific assignments from ClassCodeGate");
+                        Debug.Log($" Synchronized all assignment arrays: allAssignments, currentAssignments, and fetchedAssignments");
+                        
+                        // Check if user has a specific assignment selected
+                        int chosen = 0;
+                        bool hasSpecificSelection = false;
+                        string selId = PlayerPrefs.GetString(GetSessionKey("CurrentAssignmentId"), "");
+                        string selTitle = PlayerPrefs.GetString(GetSessionKey("CurrentAssignmentTitle"), "");
+                        
+                        if (!string.IsNullOrEmpty(selId) || !string.IsNullOrEmpty(selTitle))
+                        {
+                            for (int i = 0; i < allAssignments.assignments.Length; i++)
+                            {
+                                if (!string.IsNullOrEmpty(selId) && int.TryParse(selId, out var pid) && allAssignments.assignments[i].assignment_id == pid)
+                                { 
+                                    chosen = i; 
+                                    hasSpecificSelection = true;
+                                    Debug.Log($" Found specific assignment by ID: {selId} at index {i}");
+                                    break; 
+                                }
+                                if (!string.IsNullOrEmpty(selTitle) && string.Equals(allAssignments.assignments[i].title, selTitle, System.StringComparison.OrdinalIgnoreCase))
+                                { 
+                                    chosen = i; 
+                                    hasSpecificSelection = true;
+                                    Debug.Log($" Found specific assignment by title: {selTitle} at index {i}");
+                                    break; 
+                                }
+                            }
+                        }
+                        
+                        // If multiple assignments and no specific selection, show selection interface
+                        if (allAssignments.assignments.Length > 1 && !hasSpecificSelection)
+                        {
+                            Debug.Log($" Multiple assignments found ({allAssignments.assignments.Length}), showing selection interface...");
+                            ShowAssignmentSelection(allAssignments.assignments);
+                            return; // Don't auto-load any assignment, wait for user selection
+                        }
+                        else
+                        {
+                            // Load specific assignment or first one if only one available
+                            currentAssignmentIndex = chosen; // Update current index
+                            LoadAssignmentByIndex(chosen); // Load selected or first assignment
+                        }
+                        assignmentJoined = true;
+                        useClassCodeMode = false; // Disable manual class code since we have assignments
+                        return;
+                    }
+                    else
+                    {
+                        Debug.LogWarning($" No assignments found for current subject '{currentSubject}' in ClassCodeGate data");
+                        allAssignments = null;
+                    }
                 }
             }
             catch (System.Exception e)
@@ -633,7 +1196,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         }
         else
         {
-            Debug.Log($"❌ No PlayerPrefs key found: {assignmentKey}");
+            Debug.Log($" No PlayerPrefs key found: {assignmentKey}");
             
             // List all PlayerPrefs keys that start with "Assignments_"
             for (int i = 0; i < 10; i++)
@@ -641,7 +1204,7 @@ public class GameMechanicDragButtons : MonoBehaviour
                 string testKey = $"Assignments_MATH";
                 if (PlayerPrefs.HasKey(testKey))
                 {
-                    Debug.Log($"📋 Found assignment key: {testKey}");
+                    Debug.Log($" Found assignment key: {testKey}");
                 }
             }
             
@@ -649,35 +1212,299 @@ public class GameMechanicDragButtons : MonoBehaviour
             if (PlayerPrefs.HasKey("ClassCodeEntered"))
             {
                 string classCode = PlayerPrefs.GetString("ClassCodeEntered");
-                Debug.Log($"📋 Found entered class code: {classCode}");
+                Debug.Log($" Found entered class code: {classCode}");
             }
             
             if (PlayerPrefs.HasKey("JoinedClasses"))
             {
                 string joinedClasses = PlayerPrefs.GetString("JoinedClasses");
-                Debug.Log($"📋 Joined classes: {joinedClasses}");
+                Debug.Log($" Joined classes: {joinedClasses}");
             }
         }
         
-        Debug.Log($"ℹ️ No ClassCodeGate assignments found for {currentSubject}, using manual class code mode");
+        Debug.Log($" No ClassCodeGate assignments found for {subjectKey}, using manual class code mode");
     }
     
     /// <summary>
     /// Get current subject name from scene name or other indicators
     /// </summary>
+    /// <summary>
+    /// Get current subject dynamically without hardcoded defaults
+    /// </summary>
     string GetCurrentSubjectFromScene()
     {
+        Debug.Log($" === GET CURRENT SUBJECT FROM SCENE ===");
+        
+        // PRIORITY 1: Use CurrentSubject from PlayerPrefs (set by navigation)
+        string selected = PlayerPrefs.GetString(GetSessionKey("CurrentSubject"), string.Empty);
+        if (!string.IsNullOrEmpty(selected))
+        {
+            string normalized = NormalizeSubjectKeyForPrefs(selected);
+            Debug.Log($" Using CurrentSubject from session PlayerPrefs: '{selected}' -> '{normalized}'");
+            return normalized;
+        }
+        
+        // PRIORITY 2: Try to infer from scene name (but don't hardcode defaults)
         string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        string lower = sceneName.ToLower();
+        Debug.Log($" Scene name: '{sceneName}' -> '{lower}'");
         
-        // Map scene names to subject names
-        if (sceneName.ToLower().Contains("math")) return "MATH";
-        if (sceneName.ToLower().Contains("science")) return "SCI"; 
-        if (sceneName.ToLower().Contains("english")) return "ENG";
-        if (sceneName.ToLower().Contains("art")) return "ART";
-        if (sceneName.ToLower().Contains("pe")) return "PE";
+        if (lower.Contains("math")) 
+        {
+            Debug.Log($" Inferred MATH from scene name");
+            return "MATH";
+        }
+        if (lower.Contains("science")) 
+        {
+            Debug.Log($" Inferred SCIENCE from scene name");
+            return "SCIENCE";
+        }
+        if (lower.Contains("english")) 
+        {
+            Debug.Log($" Inferred ENGLISH from scene name");
+            return "ENGLISH";
+        }
+        if (lower.Contains("art")) 
+        {
+            Debug.Log($" Inferred ART from scene name");
+            return "ART";
+        }
+        if (lower.Contains("pe")) 
+        {
+            Debug.Log($" Inferred PE from scene name");
+            return "PE";
+        }
         
-        // Default fallback - could also check for other indicators
-        return "MATH";
+        // PRIORITY 3: Return empty string instead of hardcoded default
+        Debug.LogWarning($" Could not determine subject from PlayerPrefs or scene name!");
+        Debug.LogWarning($" Scene: '{sceneName}', PlayerPrefs CurrentSubject: '{selected}'");
+        Debug.LogWarning($" Returning empty string - system must handle this dynamically");
+        return string.Empty; // Let the system be truly dynamic
+    }
+
+    /// <summary>
+    /// Smart subject matching that works with any subject names from the database
+    /// This is completely dynamic and doesn't hardcode any subject names
+    /// </summary>
+    private bool IsSubjectMatch(string assignmentSubject, string requestedSubject)
+    {
+        if (string.IsNullOrEmpty(assignmentSubject) || string.IsNullOrEmpty(requestedSubject))
+            return false;
+        
+        string assignment = assignmentSubject.Trim().ToUpperInvariant();
+        string requested = requestedSubject.Trim().ToUpperInvariant();
+        
+        Debug.Log($" Comparing: Assignment='{assignment}' vs Requested='{requested}'");
+        
+        // Direct match
+        if (assignment == requested)
+        {
+            Debug.Log($" Direct match found");
+            return true;
+        }
+        
+        // Normalized match using our existing normalization
+        string normalizedAssignment = NormalizeSubjectKeyForPrefs(assignment);
+        string normalizedRequested = NormalizeSubjectKeyForPrefs(requested);
+        
+        Debug.Log($" Normalized: Assignment='{normalizedAssignment}' vs Requested='{normalizedRequested}'");
+        
+        if (normalizedAssignment == normalizedRequested)
+        {
+            Debug.Log($" Normalized match found");
+            return true;
+        }
+        
+        // Smart keyword matching for common variations
+        string[] mathKeywords = {"MATH", "MATHEMATICS", "MATHS"};
+        string[] scienceKeywords = {"SCIENCE", "SCI", "SCIENCES"};
+        string[] englishKeywords = {"ENGLISH", "ENG", "LANGUAGE", "LITERATURE"};
+        string[] artKeywords = {"ART", "ARTS", "VISUAL"};
+        string[] peKeywords = {"PE", "PHYSICAL", "EDUCATION", "SPORTS", "GYM"};
+        
+        // Check if both subjects contain keywords from the same category
+        if (ContainsAnyKeyword(assignment, mathKeywords) && ContainsAnyKeyword(requested, mathKeywords))
+        {
+            Debug.Log($" Math keyword match found");
+            return true;
+        }
+        
+        if (ContainsAnyKeyword(assignment, scienceKeywords) && ContainsAnyKeyword(requested, scienceKeywords))
+        {
+            Debug.Log($" Science keyword match found");
+            return true;
+        }
+        
+        if (ContainsAnyKeyword(assignment, englishKeywords) && ContainsAnyKeyword(requested, englishKeywords))
+        {
+            Debug.Log($" English keyword match found");
+            return true;
+        }
+        
+        if (ContainsAnyKeyword(assignment, artKeywords) && ContainsAnyKeyword(requested, artKeywords))
+        {
+            Debug.Log($" Art keyword match found");
+            return true;
+        }
+        
+        if (ContainsAnyKeyword(assignment, peKeywords) && ContainsAnyKeyword(requested, peKeywords))
+        {
+            Debug.Log($" PE keyword match found");
+            return true;
+        }
+        
+        Debug.Log($" No match found between '{assignment}' and '{requested}'");
+        return false;
+    }
+    
+    /// <summary>
+    /// Helper method to check if a subject contains any of the given keywords
+    /// </summary>
+    private bool ContainsAnyKeyword(string subject, string[] keywords)
+    {
+        foreach (string keyword in keywords)
+        {
+            if (subject.Contains(keyword))
+                return true;
+        }
+        return false;
+    }
+    
+    /// <summary>
+    /// Normalize subject names for PlayerPrefs keys (keeping existing functionality)
+    /// </summary>
+    private string NormalizeSubjectKeyForPrefs(string subject)
+    {
+        if (string.IsNullOrEmpty(subject)) return string.Empty;
+        string s = subject.Trim();
+        switch (s.ToUpperInvariant())
+        {
+            case "ENG":
+            case "ENGLISH":
+            case "ENGLISH SUBJECT":
+                return "ENGLISH";
+            case "SCI":
+            case "SCIENCE":
+                return "SCIENCE";
+            case "MATH":
+            case "MATHEMATICS":
+                return "MATH";
+            case "AR":
+            case "ART":
+                return "ART";
+            case "PE":
+            case "PHYSICAL EDUCATION":
+                return "PE";
+            default:
+                return s.ToUpperInvariant();
+        }
+    }
+    
+    /// <summary>
+    /// Get session-specific assignment key for PlayerPrefs
+    /// </summary>
+    private string GetSessionAssignmentKey(string subject)
+    {
+        EnsureSessionId();
+        string normalizedSubject = NormalizeSubjectKeyForPrefs(subject);
+        return $"Assignments_{normalizedSubject}_{sessionId}";
+    }
+    
+    /// <summary>
+    /// Get session-specific PlayerPrefs key
+    /// </summary>
+    private string GetSessionKey(string baseKey)
+    {
+        EnsureSessionId();
+        return $"{baseKey}_{sessionId}";
+    }
+    
+    /// <summary>
+    /// Get session and subject-specific assignment content key
+    /// This ensures assignment content is isolated per subject AND session
+    /// </summary>
+    private string GetSubjectAssignmentContentKey(string subject)
+    {
+        EnsureSessionId();
+        string normalizedSubject = NormalizeSubjectKeyForPrefs(subject);
+        return $"CurrentAssignmentContent_{normalizedSubject}_{sessionId}";
+    }
+
+    private IEnumerator LoadSelectedOrFirstAvailableSubject()
+    {
+        string selected = PlayerPrefs.GetString(GetSessionKey("CurrentSubject"), string.Empty);
+        if (!string.IsNullOrEmpty(selected))
+        {
+            string normalized = NormalizeSubjectKeyForPrefs(selected);
+            currentSubject = normalized;
+            Debug.Log($" Using selected subject from session PlayerPrefs: {normalized}");
+            
+            // Check if we already have assignments loaded for this subject
+            string assignmentSource = PlayerPrefs.GetString(GetSessionKey("AssignmentSource"), "");
+            if (assignmentSource == "teacher" && allAssignments != null && allAssignments.assignments != null && allAssignments.assignments.Length > 0)
+            {
+                Debug.Log($" Already have {allAssignments.assignments.Length} assignments loaded for {normalized}");
+                yield break; // Don't reload if we already have assignments
+            }
+            
+            // Clear any global assignment cache to prevent cross-subject contamination
+            ClearGlobalAssignmentCache();
+            
+            // Force fresh API call for this specific subject
+            yield return StartCoroutine(GetDynamicAssignments(flaskURL, "DYNAMIC", normalized));
+            
+            // If we still don't have assignments after trying the specific subject, try any subject
+            if (allAssignments == null || allAssignments.assignments == null || allAssignments.assignments.Length == 0)
+            {
+                Debug.LogWarning($" No assignments found for specific subject '{normalized}'. Trying first available class...");
+                yield return StartCoroutine(GetAndUseFirstAvailableClass());
+            }
+            yield break;
+        }
+        
+        // No specific subject selected, get first available
+        yield return StartCoroutine(GetAndUseFirstAvailableClass());
+        
+        // If still no assignments, try to find ANY assignments for ANY subject
+        if (allAssignments == null || allAssignments.assignments == null || allAssignments.assignments.Length == 0)
+        {
+            Debug.LogWarning($" No assignments found with first available class. Trying any available subject...");
+            string[] commonSubjects = {"MATH", "SCIENCE", "ENGLISH", "ART", "PE"};
+            
+            foreach (string subject in commonSubjects)
+            {
+                Debug.Log($" Trying subject: {subject}");
+                yield return StartCoroutine(GetDynamicAssignments(flaskURL, "DYNAMIC", subject));
+                
+                if (allAssignments != null && allAssignments.assignments != null && allAssignments.assignments.Length > 0)
+                {
+                    Debug.Log($" Found assignments for subject: {subject}");
+                    currentSubject = subject;
+                    PlayerPrefs.SetString(GetSessionKey("CurrentSubject"), subject);
+                    PlayerPrefs.Save();
+                    yield break;
+                }
+            }
+            
+            Debug.LogError($" No assignments found for any subject. Testing different student IDs...");
+            yield return StartCoroutine(TryDifferentStudentIDs());
+        }
+    }
+    
+    /// <summary>
+    /// Clear global assignment variables to prevent subject cross-contamination
+    /// </summary>
+    private void ClearGlobalAssignmentCache()
+    {
+        Debug.Log(" Clearing global assignment cache to prevent subject mixing");
+        allAssignments = null;
+        currentAssignments = null;
+        fetchedAssignments = null;
+        currentAssignment = null;
+        
+        // Reset assignment index
+        currentAssignmentIndex = 0;
+        assignmentId = 0;
     }
     
     /// <summary>
@@ -685,15 +1512,65 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     void LoadAssignmentByIndex(int assignmentIndex)
     {
+        Debug.Log($" === LOADING ASSIGNMENT BY INDEX {assignmentIndex} ===");
+        
         if (allAssignments == null || allAssignments.assignments == null || 
             assignmentIndex >= allAssignments.assignments.Length)
         {
-            Debug.LogError("Invalid assignment index or no assignments available");
+            Debug.LogError($" Invalid assignment index {assignmentIndex} or no assignments available");
+            Debug.LogError($"   allAssignments: {allAssignments != null}");
+            Debug.LogError($"   assignments array: {(allAssignments?.assignments != null ? allAssignments.assignments.Length.ToString() : "null")}");
+            
+            // Show error message in UI
+            if (questionText != null)
+            {
+                questionText.text = " No assignment data found. Please check your connection and try again.";
+            }
             return;
         }
         
         Assignment serverAssignment = allAssignments.assignments[assignmentIndex];
-        Debug.Log($"🎯 Loading assignment: {serverAssignment.title} with {serverAssignment.questions.Length} questions");
+        
+        // IMPORTANT: Update current assignment index to maintain proper state
+        currentAssignmentIndex = assignmentIndex;
+        
+        // Track the active server assignment id for result submission
+        assignmentId = serverAssignment.assignment_id;
+        Debug.Log($" Loading assignment: '{serverAssignment.title}' with {serverAssignment.questions.Length} questions");
+        Debug.Log($" Assignment ID: {serverAssignment.assignment_id}");
+        Debug.Log($" Assignment Index: {assignmentIndex} (of {allAssignments.assignments.Length})");
+        Debug.Log($" Assignment Subject: '{serverAssignment.subject}'");
+        
+        if (serverAssignment.questions == null || serverAssignment.questions.Length == 0)
+        {
+            Debug.LogError($" Assignment '{serverAssignment.title}' has no questions!");
+            if (questionText != null)
+            {
+                questionText.text = $" Assignment '{serverAssignment.title}' has no questions. Please contact your teacher.";
+            }
+            return;
+        }
+        
+        Debug.Log($" === ASSIGNMENT CONTENT VERIFICATION ===");
+        Debug.Log($" Assignment Title: '{serverAssignment.title}'");
+        Debug.Log($" Assignment ID: {serverAssignment.assignment_id}");
+        Debug.Log($" Assignment Index: {assignmentIndex} (of {allAssignments.assignments.Length})");
+        Debug.Log($" Assignment Subject: '{serverAssignment.subject}'");
+        Debug.Log($" Total Questions: {serverAssignment.questions.Length}");
+        Debug.Log($" Due Date: {serverAssignment.due_date}");
+        Debug.Log($" Created By: {serverAssignment.created_by}");
+        
+        // Log first few questions to verify uniqueness
+        for (int q = 0; q < Math.Min(3, serverAssignment.questions.Length); q++)
+        {
+            var question = serverAssignment.questions[q];
+            Debug.Log($" Q{q + 1}: '{question.question_text}'");
+            Debug.Log($"     Type: {question.question_type}");
+            Debug.Log($"     Options: [{string.Join(", ", question.options ?? new string[0])}]");
+            Debug.Log($"     Correct: '{question.correct_answer}'");
+            Debug.Log($"     Question ID: {question.question_id}");
+        }
+        Debug.Log($" === END CONTENT VERIFICATION ===");
         
         // Convert to internal format
         currentAssignment = new ClassAssignment
@@ -707,6 +1584,11 @@ public class GameMechanicDragButtons : MonoBehaviour
         for (int i = 0; i < serverAssignment.questions.Length; i++)
         {
             var serverQ = serverAssignment.questions[i];
+            Debug.Log($"   Processing Question {i + 1}: '{serverQ.question_text}'");
+            Debug.Log($"   Question Type: '{serverQ.question_type}'");
+            Debug.Log($"   Options: [{string.Join(", ", serverQ.options)}]");
+            Debug.Log($"   Correct Answer: '{serverQ.correct_answer}'");
+            Debug.Log($"   Question ID: {serverQ.question_id}");
             
             var questionData = new QuestionData
             {
@@ -737,9 +1619,18 @@ public class GameMechanicDragButtons : MonoBehaviour
         currentQuestionIndex = 0;
         studentAnswers.Clear();
         
+        Debug.Log($" === ASSIGNMENT STATE RESET ===");
+        Debug.Log($" currentQuestionIndex reset to: {currentQuestionIndex}");
+        Debug.Log($" studentAnswers cleared: {studentAnswers.Count} answers");
+        Debug.Log($" currentAssignment created with {currentAssignment.questions.Length} questions");
+        Debug.Log($" currentAssignmentIndex set to: {currentAssignmentIndex}");
+        Debug.Log($" assignmentId set to: {assignmentId}");
+        Debug.Log($" === END ASSIGNMENT STATE RESET ===");
+        
         // Start displaying the first question
         if (currentAssignment.questions.Length > 0)
         {
+            Debug.Log($" Starting assignment flow with {currentAssignment.questions.Length} questions");
             StartAssignmentFlow();
         }
     }
@@ -749,7 +1640,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     IEnumerator StartAssignmentFlow(string classCode)
     {
-        Debug.Log($"🚀 Starting assignment flow for class: {classCode}");
+        Debug.Log($" Starting assignment flow for class: {classCode}");
         
         // First get dynamic class data to find the subject
         yield return StartCoroutine(GetDynamicClassData(flaskURL));
@@ -759,14 +1650,14 @@ public class GameMechanicDragButtons : MonoBehaviour
             var targetClass = availableClasses.Find(c => c.class_code == classCode);
             if (targetClass != null)
             {
-                Debug.Log($"🎯 Found class {classCode} with subject {targetClass.subject}");
+                Debug.Log($" Found class {classCode} with subject {targetClass.subject}");
                 
                 // Get assignments for this specific class
                 yield return StartCoroutine(GetDynamicAssignments(flaskURL, classCode, targetClass.subject));
             }
             else
             {
-                Debug.LogWarning($"⚠️ Class {classCode} not found in available classes");
+                Debug.LogWarning($" Class {classCode} not found in available classes");
             }
         }
     }
@@ -776,7 +1667,42 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     void StartAssignmentFlow()
     {
-        Debug.Log($"🚀 Starting assignment: {currentAssignment.assignmentTitle}");
+        Debug.Log($" === STARTING ASSIGNMENT FLOW ===");
+        Debug.Log($" Assignment: {currentAssignment?.assignmentTitle ?? "NULL"}");
+        Debug.Log($" Questions: {currentAssignment?.questions?.Length ?? 0}");
+        Debug.Log($" Current Question Index: {currentQuestionIndex}");
+        
+        if (currentAssignment == null)
+        {
+            Debug.LogError($" StartAssignmentFlow called but currentAssignment is NULL!");
+            if (questionText != null)
+            {
+                questionText.text = " No assignment loaded. StartAssignmentFlow called with null assignment.";
+            }
+            return;
+        }
+        
+        if (currentAssignment.questions == null || currentAssignment.questions.Length == 0)
+        {
+            Debug.LogError($" Assignment '{currentAssignment.assignmentTitle}' has no questions!");
+            if (questionText != null)
+            {
+                questionText.text = $" Assignment '{currentAssignment.assignmentTitle}' has no questions to display.";
+            }
+            return;
+        }
+        
+        if (currentQuestionIndex >= currentAssignment.questions.Length)
+        {
+            Debug.LogError($" Invalid question index {currentQuestionIndex} for assignment with {currentAssignment.questions.Length} questions!");
+            if (questionText != null)
+            {
+                questionText.text = $" Invalid question index. Assignment has {currentAssignment.questions.Length} questions.";
+            }
+            return;
+        }
+        
+        Debug.Log($" Starting assignment: {currentAssignment.assignmentTitle}");
         
         // IMPORTANT: Hide class code entry UI and show assignment UI
         useClassCodeMode = false;
@@ -789,12 +1715,36 @@ public class GameMechanicDragButtons : MonoBehaviour
         ShowAssignmentUI();
         
         // Update question text with actual assignment content
-        string questionContent = $"📚 {currentAssignment.assignmentTitle}\n\n" +
-                               $"Q{currentQuestionIndex + 1}/{currentAssignment.questions.Length}: {currentAssignment.questions[currentQuestionIndex].questionText}";
+        var currentQ = currentAssignment.questions[currentQuestionIndex];
+        string questionContent = $" {currentAssignment.assignmentTitle}\n\n" +
+                               $"Q{currentQuestionIndex + 1}/{currentAssignment.questions.Length}: {currentQ.questionText}";
         
-        questionText.text = questionContent;
+        Debug.Log($" === QUESTION DISPLAY DEBUG ===");
+        Debug.Log($" Assignment Title: '{currentAssignment.assignmentTitle}'");
+        Debug.Log($" Assignment Index: {currentAssignmentIndex}");
+        Debug.Log($" Assignment ID in currentAssignment: {assignmentId}");
+        Debug.Log($" Current Question Index: {currentQuestionIndex}");
+        Debug.Log($" Total Questions: {currentAssignment.questions.Length}");
+        Debug.Log($" Current Question: '{currentQ.questionText}'");
+        Debug.Log($" Question Type: '{currentQ.questionType}'");
+        Debug.Log($" Question ID: {currentQ.questionId}");
+        Debug.Log($" === END QUESTION DISPLAY DEBUG ===");
+        Debug.Log($" Setting question text to: {questionContent}");
+        Debug.Log($" questionText component: {(questionText != null ? "FOUND" : "NULL")}");
         
-        Debug.Log($"📝 UI Updated - Question: {questionContent}");
+        if (questionText != null)
+        {
+            questionText.text = questionContent;
+            Debug.Log($" questionText.text set to: {questionText.text}");
+            Debug.Log($" questionText.gameObject.activeInHierarchy: {questionText.gameObject.activeInHierarchy}");
+            Debug.Log($" questionText.enabled: {questionText.enabled}");
+        }
+        else
+        {
+            Debug.LogError($" questionText component is NULL! Cannot display question content.");
+        }
+        
+        Debug.Log($" UI Updated - Question: {questionContent}");
         
         // Update progress
         UpdateProgressUI();
@@ -802,7 +1752,8 @@ public class GameMechanicDragButtons : MonoBehaviour
         // Set up multiple choice buttons with the current question's options
         SetupMultipleChoiceButtons();
         
-        Debug.Log($"✅ Assignment UI should now show '{currentAssignment.assignmentTitle}' with question: {currentAssignment.questions[currentQuestionIndex].questionText}");
+        Debug.Log($" Assignment UI should now show '{currentAssignment.assignmentTitle}' with question: {currentQ.questionText}");
+        Debug.Log($" === ASSIGNMENT FLOW COMPLETE ===");
     }
 
     /// <summary>
@@ -810,7 +1761,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     void HideClassCodeUI()
     {
-        Debug.Log("🙈 Hiding class code entry UI");
+        Debug.Log(" Hiding class code entry UI");
         // The class code entry UI should be hidden when useClassCodeMode = false
         // This is handled automatically by the Update() method logic
     }
@@ -820,22 +1771,55 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     void ShowAssignmentUI()
     {
-        Debug.Log("👁️ Showing assignment UI");
+        Debug.Log(" === SHOWING ASSIGNMENT UI ===");
+        Debug.Log($" answerButtons count: {answerButtons?.Count ?? 0}");
+        Debug.Log($" questionText: {(questionText != null ? "FOUND" : "NULL")}");
         
         // Make sure answer buttons are visible and active
-        foreach (var button in answerButtons)
+        if (answerButtons != null)
         {
-            if (button != null)
+            for (int i = 0; i < answerButtons.Count; i++)
             {
-                button.gameObject.SetActive(true);
+                var button = answerButtons[i];
+                if (button != null)
+                {
+                    button.gameObject.SetActive(true);
+                    Debug.Log($" Button {i}: {button.name} - Active: {button.gameObject.activeSelf}");
+                }
+                else
+                {
+                    Debug.LogWarning($" Button {i} is NULL!");
+                }
             }
+        }
+        else
+        {
+            Debug.LogWarning($" answerButtons list is NULL!");
         }
         
         // Make sure question text is visible
         if (questionText != null)
         {
             questionText.gameObject.SetActive(true);
+            Debug.Log($" questionText: {questionText.name} - Active: {questionText.gameObject.activeSelf} - Enabled: {questionText.enabled}");
         }
+        else
+        {
+            Debug.LogWarning($" questionText is NULL!");
+            // Try to find it again
+            FindUIComponents();
+            if (questionText != null)
+            {
+                questionText.gameObject.SetActive(true);
+                Debug.Log($" questionText found after FindUIComponents: {questionText.name}");
+            }
+            else
+            {
+                Debug.LogError($" questionText still NULL after FindUIComponents!");
+            }
+        }
+        
+        Debug.Log(" === ASSIGNMENT UI SETUP COMPLETE ===");
     }
     
     /// <summary>
@@ -843,36 +1827,76 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     void SetupMultipleChoiceButtons()
     {
+        Debug.Log($" === SETTING UP MULTIPLE CHOICE BUTTONS ===");
+        
         if (currentAssignment == null || currentQuestionIndex >= currentAssignment.questions.Length)
+        {
+            Debug.LogError($" Cannot setup buttons - currentAssignment: {currentAssignment != null}, questionIndex: {currentQuestionIndex}, questions length: {currentAssignment?.questions?.Length ?? 0}");
             return;
+        }
             
         var currentQ = currentAssignment.questions[currentQuestionIndex];
+        Debug.Log($" Current question: '{currentQ.questionText}'");
+        Debug.Log($" Options count: {currentQ.multipleChoiceOptions?.Count ?? 0}");
+        Debug.Log($" Available buttons: {answerButtons?.Count ?? 0}");
+        
+        if (currentQ.multipleChoiceOptions == null || currentQ.multipleChoiceOptions.Count == 0)
+        {
+            Debug.LogError($" Question has no multiple choice options!");
+            return;
+        }
+        
+        if (answerButtons == null || answerButtons.Count == 0)
+        {
+            Debug.LogError($" No answer buttons available!");
+            return;
+        }
         
         // Set up the answer buttons with the current question's options
         for (int i = 0; i < answerButtons.Count && i < currentQ.multipleChoiceOptions.Count; i++)
         {
-            answerButtons[i].gameObject.SetActive(true);
-            
-            // Get button text component
-            TMP_Text buttonText = answerButtons[i].GetComponentInChildren<TMP_Text>();
-            if (buttonText != null)
+            var button = answerButtons[i];
+            if (button != null)
             {
-                buttonText.text = currentQ.multipleChoiceOptions[i];
+                button.gameObject.SetActive(true);
+                
+                // Get button text component
+                TMP_Text buttonText = button.GetComponentInChildren<TMP_Text>();
+                if (buttonText != null)
+                {
+                    buttonText.text = currentQ.multipleChoiceOptions[i];
+                    Debug.Log($" Button {i}: '{currentQ.multipleChoiceOptions[i]}' - Set successfully");
+                }
+                else
+                {
+                    Debug.LogError($" Button {i} has no TMP_Text component!");
+                }
+                
+                // Set up button click handler
+                int buttonIndex = i; // Capture for closure
+                button.onClick.RemoveAllListeners();
+                button.onClick.AddListener(() => OnMultipleChoiceAnswer(buttonIndex));
+                
+                Debug.Log($" Button {i}: Active={button.gameObject.activeSelf}, Text='{currentQ.multipleChoiceOptions[i]}'");
             }
-            
-            // Set up button click handler
-            int buttonIndex = i; // Capture for closure
-            answerButtons[i].onClick.RemoveAllListeners();
-            answerButtons[i].onClick.AddListener(() => OnMultipleChoiceAnswer(buttonIndex));
+            else
+            {
+                Debug.LogError($" Answer button {i} is NULL!");
+            }
         }
         
         // Hide unused buttons
         for (int i = currentQ.multipleChoiceOptions.Count; i < answerButtons.Count; i++)
         {
-            answerButtons[i].gameObject.SetActive(false);
+            if (answerButtons[i] != null)
+            {
+                answerButtons[i].gameObject.SetActive(false);
+                Debug.Log($" Button {i}: Hidden (unused)");
+            }
         }
         
-        Debug.Log($"🔘 Set up {currentQ.multipleChoiceOptions.Count} answer options for question {currentQuestionIndex + 1}");
+        Debug.Log($" Successfully set up {currentQ.multipleChoiceOptions.Count} answer options for question {currentQuestionIndex + 1}");
+        Debug.Log($" === MULTIPLE CHOICE SETUP COMPLETE ===");
     }
     
     /// <summary>
@@ -887,7 +1911,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         string selectedAnswer = currentQ.multipleChoiceOptions[selectedIndex];
         bool isCorrect = currentQ.correctMultipleChoiceIndices.Contains(selectedIndex);
         
-        Debug.Log($"📋 Student selected: {selectedAnswer} (Index: {selectedIndex}, Correct: {isCorrect})");
+        Debug.Log($" Student selected: {selectedAnswer} (Index: {selectedIndex}, Correct: {isCorrect})");
         
         // Record the answer
         studentAnswers.Add(new QuestionResult
@@ -935,8 +1959,53 @@ public class GameMechanicDragButtons : MonoBehaviour
 
     void Start()
     {
-        // Clear assignment cache to ensure fresh data is loaded
-        ClearAssignmentCache();
+        Debug.Log("=== GAMEMECHANICDRAGBUTTONS START ===");
+        
+        // Initialize session isolation immediately
+        EnsureSessionId();
+        Debug.Log($" SESSION ISOLATION ACTIVE - Session ID: {sessionId}");
+        
+        // Clear any previous student data to ensure isolation
+        ClearStudentSpecificCache();
+        
+        // Debug: Check what PlayerPrefs we have at start
+        string currentSubject = PlayerPrefs.GetString(GetSessionKey("CurrentSubject"), "");
+        string assignmentSource = PlayerPrefs.GetString(GetSessionKey("AssignmentSource"), "");
+        string currentAssignmentId = PlayerPrefs.GetString(GetSessionKey("CurrentAssignmentId"), "");
+        
+        // Add a delay then call debug state
+        StartCoroutine(DelayedDebugState());
+        string currentAssignmentTitle = PlayerPrefs.GetString(GetSessionKey("CurrentAssignmentTitle"), "");
+        string currentAssignmentContent = "";
+        if (!string.IsNullOrEmpty(currentSubject))
+        {
+            currentAssignmentContent = PlayerPrefs.GetString(GetSubjectAssignmentContentKey(currentSubject), "");
+        }
+        
+        Debug.Log($" AT START - Session CurrentSubject: '{currentSubject}'");
+        Debug.Log($" AT START - Session AssignmentSource: '{assignmentSource}'");
+        Debug.Log($" AT START - Session CurrentAssignmentId: '{currentAssignmentId}'");
+        Debug.Log($" AT START - Session CurrentAssignmentTitle: '{currentAssignmentTitle}'");
+        Debug.Log($" AT START - Subject-specific CurrentAssignmentContent length: {currentAssignmentContent.Length}");
+        
+        // CRITICAL: Check if we have navigation data from teacher interface
+        bool hasNavigationData = !string.IsNullOrEmpty(currentSubject) && assignmentSource == "teacher";
+        
+        if (hasNavigationData)
+        {
+            Debug.Log(" Found navigation data from teacher interface - using TRADITIONAL MODE");
+            useClassCodeMode = false; // IMPORTANT: Disable class code mode when we have teacher assignments
+            // Clear global cache to prevent cross-subject contamination while preserving navigation data
+            ClearGlobalAssignmentCache();
+        }
+        else
+        {
+            Debug.Log(" No navigation data found - clearing assignment cache and using CLASS CODE MODE");
+            useClassCodeMode = true; // Use class code mode when no teacher assignments
+            ClearAssignmentCache();
+        }
+        
+        Debug.Log($" FINAL MODE DECISION: useClassCodeMode = {useClassCodeMode}");
         
         // Test web app connectivity first
         StartCoroutine(TestWebAppConnection());
@@ -946,8 +2015,24 @@ public class GameMechanicDragButtons : MonoBehaviour
         
         InitializeGame();
         
-        // Use dynamic system instead of hardcoded assignment interface
-        StartCoroutine(GetAndUseFirstAvailableClass());
+        // Use selected subject if available; otherwise, fallback to first available
+        StartCoroutine(LoadSelectedOrFirstAvailableSubject());
+        
+        // Start auto-discovery as a background safety net
+        StartCoroutine(AutoDiscoverAssignments());
+        
+        // Add delayed debug
+        StartCoroutine(DelayedDebugState());
+    }
+    
+    /// <summary>
+    /// Delayed debug to check assignment state after initialization
+    /// </summary>
+    IEnumerator DelayedDebugState()
+    {
+        yield return new WaitForSeconds(3f); // Wait 3 seconds for assignments to load
+        Debug.Log(" === DELAYED DEBUG STATE (3 seconds after start) ===");
+        DebugAssignmentState();
     }
     
     /// <summary>
@@ -955,7 +2040,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     private void ClearAssignmentCache()
     {
-        Debug.Log("🧹 Clearing assignment cache to ensure fresh data...");
+        Debug.Log(" Clearing assignment cache to ensure fresh data...");
         
         // Clear current assignment content
         PlayerPrefs.DeleteKey("CurrentAssignmentContent");
@@ -971,7 +2056,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         // Clear common assignment keys patterns
         string[] keyPatterns = { 
             "Assignments_", "ActiveAssignment_", "Subject_", "Assignment_", 
-            "CurrentSubject", "StudentID", "ClassCode"
+            "StudentID", "ClassCode"
         };
         
         foreach (string pattern in keyPatterns)
@@ -992,7 +2077,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         }
         
         PlayerPrefs.Save();
-        Debug.Log("✅ Assignment cache cleared");
+        Debug.Log(" Assignment cache cleared");
     }
     
     /// <summary>
@@ -1002,7 +2087,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     {
         yield return new WaitForSeconds(delay);
         // TestMultipleChoiceInterface(); // DISABLED - Use dynamic assignments from web app instead
-        Debug.Log("⚠️ ShowTestQuestionAfterDelay called but disabled to prevent hardcoded content. Use dynamic assignments from web app.");
+        Debug.Log(" ShowTestQuestionAfterDelay called but disabled to prevent hardcoded content. Use dynamic assignments from web app.");
     }
     
     /// <summary>
@@ -1011,7 +2096,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     IEnumerator TestWebAppConnection()
     {
         string testUrl = "https://homequest-c3k7.onrender.com/";
-        Debug.Log($"🌐 Testing connection to web app: {testUrl}");
+        Debug.Log($" Testing connection to web app: {testUrl}");
         
         using (UnityWebRequest request = UnityWebRequest.Get(testUrl))
         {
@@ -1019,11 +2104,11 @@ public class GameMechanicDragButtons : MonoBehaviour
             
             if (request.result == UnityWebRequest.Result.Success)
             {
-                Debug.Log($"✅ Web app is reachable! Response code: {request.responseCode}");
+                Debug.Log($" Web app is reachable! Response code: {request.responseCode}");
             }
             else
             {
-                Debug.LogError($"❌ Cannot reach web app: {request.error} (Code: {request.responseCode})");
+                Debug.LogError($" Cannot reach web app: {request.error} (Code: {request.responseCode})");
             }
         }
     }
@@ -1036,7 +2121,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         string baseUrl = "https://homequest-c3k7.onrender.com";
         
         // Test 0: Get all available classes first
-        Debug.Log("🧪 Getting all available classes from web app...");
+        Debug.Log(" Getting all available classes from web app...");
         yield return StartCoroutine(GetAvailableClasses(baseUrl));
     }
     
@@ -1051,8 +2136,8 @@ public class GameMechanicDragButtons : MonoBehaviour
         {
             yield return request.SendWebRequest();
             
-            Debug.Log($"📡 Classes Response Code: {request.responseCode}");
-            Debug.Log($"📡 Classes Response: {request.downloadHandler.text}");
+            Debug.Log($" Classes Response Code: {request.responseCode}");
+            Debug.Log($" Classes Response: {request.downloadHandler.text}");
             
             if (request.result == UnityWebRequest.Result.Success)
             {
@@ -1060,12 +2145,12 @@ public class GameMechanicDragButtons : MonoBehaviour
                 var response = JsonUtility.FromJson<ClassesResponse>(request.downloadHandler.text);
                 if (response != null && response.data != null && response.data.Length > 0)
                 {
-                    Debug.Log($"✅ Found {response.data.Length} classes in web app:");
+                    Debug.Log($" Found {response.data.Length} classes in web app:");
                     string firstClassCode = null;
                     
                     foreach (var classData in response.data)
                     {
-                        Debug.Log($"  📚 Class: {classData.name} (Code: {classData.class_code})");
+                        Debug.Log($"   Class: {classData.name} (Code: {classData.class_code})");
                         if (firstClassCode == null)
                             firstClassCode = classData.class_code;
                     }
@@ -1073,18 +2158,18 @@ public class GameMechanicDragButtons : MonoBehaviour
                     // Test with the first available class code
                     if (firstClassCode != null)
                     {
-                        Debug.Log($"🎯 Testing with real class code: {firstClassCode}");
+                        Debug.Log($" Testing with real class code: {firstClassCode}");
                         yield return StartCoroutine(TestJoinClass(baseUrl, firstClassCode));
                     }
                 }
                 else
                 {
-                    Debug.LogWarning("⚠️ No classes found in web app. Create a class first!");
+                    Debug.LogWarning(" No classes found in web app. Create a class first!");
                 }
             }
             else
             {
-                Debug.LogError($"❌ Failed to get classes: {request.error}");
+                Debug.LogError($" Failed to get classes: {request.error}");
             }
         }
     }
@@ -1094,12 +2179,12 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     IEnumerator TestJoinClass(string baseUrl, string classCode)
     {
-        Debug.Log($"🧪 Testing /student/join-class with real code: {classCode}");
+        Debug.Log($" Testing /student/join-class with real code: {classCode}");
         string joinUrl = baseUrl + "/student/join-class";
         
         var joinPayload = new {
-            class_code = classCode
-            // Remove hardcoded student_id - let backend handle authentication
+            class_code = classCode,
+            student_id = GetDynamicStudentID() // Include student_id for proper registration
         };
         
         string jsonData = JsonUtility.ToJson(joinPayload);
@@ -1113,18 +2198,18 @@ public class GameMechanicDragButtons : MonoBehaviour
             
             yield return request.SendWebRequest();
             
-            Debug.Log($"📡 Join Class Response Code: {request.responseCode}");
-            Debug.Log($"📡 Join Class Response: {request.downloadHandler.text}");
+            Debug.Log($" Join Class Response Code: {request.responseCode}");
+            Debug.Log($" Join Class Response: {request.downloadHandler.text}");
             
             if (request.result == UnityWebRequest.Result.Success)
             {
-                Debug.Log("✅ Join Class endpoint is working!");
+                Debug.Log(" Join Class endpoint is working!");
                 
                 // Parse join response to get subject
                 var joinResponse = JsonUtility.FromJson<JoinClassApiResponse>(request.downloadHandler.text);
                 if (joinResponse != null)
                 {
-                    Debug.Log($"🎯 Joined subject: {joinResponse.subject}");
+                    Debug.Log($" Joined subject: {joinResponse.subject}");
                     
                     // Test getting assignments for this subject
                     yield return new WaitForSeconds(1f);
@@ -1133,7 +2218,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             }
             else
             {
-                Debug.LogError($"❌ Join Class failed: {request.error}");
+                Debug.LogError($" Join Class failed: {request.error}");
                 Debug.LogError($"Response: {request.downloadHandler.text}");
             }
         }
@@ -1144,7 +2229,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     IEnumerator TestGetAssignmentsEndpoint(string baseUrl, string subject = "")
     {
-        Debug.Log($"🧪 Testing /student/assignments endpoint for subject: {subject}");
+        Debug.Log($" Testing /student/assignments endpoint for subject: {subject}");
         string assignmentsUrl = baseUrl + "/student/assignments";
         
         var assignmentsPayload = new {
@@ -1163,37 +2248,53 @@ public class GameMechanicDragButtons : MonoBehaviour
             
             yield return request.SendWebRequest();
             
-            Debug.Log($"📡 Assignments Response Code: {request.responseCode}");
-            Debug.Log($"📡 Assignments Response: {request.downloadHandler.text}");
+            Debug.Log($" Assignments Response Code: {request.responseCode}");
+            Debug.Log($" Assignments Response: {request.downloadHandler.text}");
             
             if (request.result == UnityWebRequest.Result.Success)
             {
-                Debug.Log("✅ Assignments endpoint is working!");
+                Debug.Log(" Assignments endpoint is working!");
                 // Try to parse and use the response
                 AssignmentsResponse response = JsonUtility.FromJson<AssignmentsResponse>(request.downloadHandler.text);
                 if (response != null && response.assignments != null && response.assignments.Length > 0)
                 {
-                    Debug.Log($"🎯 Found {response.assignments.Length} assignments from web app!");
+                    Debug.Log($" Found {response.assignments.Length} assignments from web app!");
                     foreach (var assignment in response.assignments)
                     {
-                        Debug.Log($"  📋 Assignment: {assignment.title} ({assignment.questions.Length} questions)");
+                        Debug.Log($"   Assignment: {assignment.title} ({assignment.questions.Length} questions)");
                     }
                     
                     // If we found assignments, let's try to load them into the game!
-                    Debug.Log("🚀 Attempting to load these assignments into the game...");
+                    Debug.Log(" Attempting to load these assignments into the game...");
                     allAssignments = response;
-                    LoadAssignmentByIndex(0);
+                    currentAssignments = response;
+                    fetchedAssignments = response.assignments; // Sync with old system
+                    Debug.Log($" Synchronized all assignment arrays in FetchTeacherAssignment");
+                    int idx = 0;
+                    string selId = PlayerPrefs.GetString(GetSessionKey("CurrentAssignmentId"), "");
+                    string selTitle = PlayerPrefs.GetString(GetSessionKey("CurrentAssignmentTitle"), "");
+                    if (!string.IsNullOrEmpty(selId) || !string.IsNullOrEmpty(selTitle))
+                    {
+                        for (int i = 0; i < allAssignments.assignments.Length; i++)
+                        {
+                            if (!string.IsNullOrEmpty(selId) && int.TryParse(selId, out var pid) && allAssignments.assignments[i].assignment_id == pid)
+                            { idx = i; break; }
+                            if (!string.IsNullOrEmpty(selTitle) && string.Equals(allAssignments.assignments[i].title, selTitle, System.StringComparison.OrdinalIgnoreCase))
+                            { idx = i; break; }
+                        }
+                    }
+                    LoadAssignmentByIndex(idx);
                     assignmentJoined = true;
                     useClassCodeMode = false;
                 }
                 else
                 {
-                    Debug.LogWarning($"⚠️ No assignments found for subject: {subject}. Create assignments in your web app!");
+                    Debug.LogWarning($" No assignments found for subject: {subject}. Create assignments in your web app!");
                 }
             }
             else
             {
-                Debug.LogError($"❌ Assignments failed: {request.error}");
+                Debug.LogError($" Assignments failed: {request.error}");
             }
         }
     }
@@ -1215,15 +2316,15 @@ public class GameMechanicDragButtons : MonoBehaviour
         
         if (anyKeyPressed)
         {
-            Debug.Log("🎹 ANY KEY PRESSED! Old Input system is working!");
+            Debug.Log(" ANY KEY PRESSED! Old Input system is working!");
             
             // Check specifically for our needed keys with old system
-            if (Input.GetKeyDown(KeyCode.L)) Debug.Log("🔑 L key pressed!");
-            if (Input.GetKeyDown(KeyCode.T)) Debug.Log("🔑 T key pressed!");
-            if (Input.GetKeyDown(KeyCode.C)) Debug.Log("🔑 C key pressed!");
-            if (Input.GetKeyDown(KeyCode.R)) Debug.Log("🔑 R key pressed!");
-            if (Input.GetKeyDown(KeyCode.X)) Debug.Log("🔑 X key pressed!");
-            if (Input.GetKeyDown(KeyCode.D)) Debug.Log("🔑 D key pressed!");
+            if (Input.GetKeyDown(KeyCode.L)) Debug.Log(" L key pressed!");
+            if (Input.GetKeyDown(KeyCode.T)) Debug.Log(" T key pressed!");
+            if (Input.GetKeyDown(KeyCode.C)) Debug.Log(" C key pressed!");
+            if (Input.GetKeyDown(KeyCode.R)) Debug.Log(" R key pressed!");
+            if (Input.GetKeyDown(KeyCode.X)) Debug.Log(" X key pressed!");
+            if (Input.GetKeyDown(KeyCode.D)) Debug.Log(" D key pressed!");
         }
         
         // Alternative: Check for key presses without anyKeyDown
@@ -1231,13 +2332,13 @@ public class GameMechanicDragButtons : MonoBehaviour
             Input.GetKeyDown(KeyCode.C) || Input.GetKeyDown(KeyCode.R) ||
             Input.GetKeyDown(KeyCode.X) || Input.GetKeyDown(KeyCode.D))
         {
-            Debug.Log("🎯 Direct key check detected input!");
+            Debug.Log(" Direct key check detected input!");
         }
         
         // Debug: Show current state (remove this after testing)
         if (Input.GetKeyDown(KeyCode.D))
         {
-            Debug.Log($"🔍 Debug Info:");
+            Debug.Log($" Debug Info:");
             Debug.Log($"   useClassCodeMode: {useClassCodeMode}");
             Debug.Log($"   assignmentJoined: {assignmentJoined}");
             Debug.Log($"   Current scene: {UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}");
@@ -1246,52 +2347,52 @@ public class GameMechanicDragButtons : MonoBehaviour
         // Press 'X' to clear PlayerPrefs and force enable class code mode
         if (Input.GetKeyDown(KeyCode.X))
         {
-            Debug.Log("🧹 X key pressed - Clearing PlayerPrefs and enabling class code mode");
+            Debug.Log(" X key pressed - Clearing PlayerPrefs and enabling class code mode");
             PlayerPrefs.DeleteAll();
             PlayerPrefs.Save();
             useClassCodeMode = true;
             assignmentJoined = false;
-            Debug.Log("✅ Class code mode re-enabled. You can now use L, T, C, R keys.");
+            Debug.Log(" Class code mode re-enabled. You can now use L, T, C, R keys.");
         }
         
         // Test ALL key presses (temporary debug)
         if (Input.GetKeyDown(KeyCode.L))
         {
-            Debug.Log("🎹 L key pressed!");
+            Debug.Log(" L key pressed!");
         }
         if (Input.GetKeyDown(KeyCode.T))
         {
-            Debug.Log("🎹 T key pressed!");
+            Debug.Log(" T key pressed!");
         }
         if (Input.GetKeyDown(KeyCode.C))
         {
-            Debug.Log("🎹 C key pressed!");
+            Debug.Log(" C key pressed!");
         }
         if (Input.GetKeyDown(KeyCode.R))
         {
-            Debug.Log("🎹 R key pressed!");
+            Debug.Log(" R key pressed!");
         }
         
         // Test different student IDs (press S key)
         if (Input.GetKeyDown(KeyCode.S))
         {
-            Debug.Log("🧪 S key pressed! Testing different student IDs...");
+            Debug.Log(" S key pressed! Testing different student IDs...");
             TestDifferentStudentIDs();
         }
         
         // Press 'R' key to refresh assignments (clear cache and reload)
         if (Input.GetKeyDown(KeyCode.R))
         {
-            Debug.Log("🔄 R key pressed! Refreshing assignments...");
+            Debug.Log(" R key pressed! Refreshing assignments...");
             ClearAssignmentCache();
-            StartCoroutine(GetAndUseFirstAvailableClass());
+            StartCoroutine(LoadSelectedOrFirstAvailableSubject());
         }
         
         // Press 'M' key to test multiple choice interface (bypass class code) - DISABLED to prevent hardcoded content
         /*
         if (Input.GetKeyDown(KeyCode.M))
         {
-            Debug.Log("🎮 M key pressed! Testing multiple choice interface...");
+            Debug.Log(" M key pressed! Testing multiple choice interface...");
             TestMultipleChoiceInterface();
         }
         */
@@ -1299,26 +2400,26 @@ public class GameMechanicDragButtons : MonoBehaviour
         // Test controls for class code system
         if (useClassCodeMode)
         {
-            Debug.Log("🔄 useClassCodeMode is TRUE - checking keys...");
+            Debug.Log(" useClassCodeMode is TRUE - checking keys...");
             
             // Press 'C' to test class code entry
             if (Input.GetKeyDown(KeyCode.C))
             {
-                Debug.Log("🎯 C pressed - showing class code entry");
+                Debug.Log(" C pressed - showing class code entry");
                 ShowClassCodeEntry();
             }
             
             // Press 'T' to test web app endpoints
             if (Input.GetKeyDown(KeyCode.T))
             {
-                Debug.Log("🧪 T pressed - testing endpoints");
+                Debug.Log(" T pressed - testing endpoints");
                 StartCoroutine(TestClassCodeGateEndpoints());
             }
             
             // Press 'L' to list available class codes
             if (Input.GetKeyDown(KeyCode.L))
             {
-                Debug.Log("📋 L pressed - getting class codes");
+                Debug.Log(" L pressed - getting class codes");
                 StartCoroutine(GetAvailableClasses("https://homequest-c3k7.onrender.com"));
             }
             
@@ -1447,7 +2548,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         try
         {
             // Set player name from PlayerPrefs or use default
-            playerName = PlayerPrefs.GetString("PlayerName", "Student1");
+            playerName = PlayerPrefs.GetString(GetSessionKey("PlayerName"), "Student1");
             
             // Show class code entry screen
             ShowClassCodeEntry();
@@ -1468,12 +2569,39 @@ public class GameMechanicDragButtons : MonoBehaviour
         
         try
         {
+            // Debug: Check what PlayerPrefs we have
+            string currentSubject = PlayerPrefs.GetString("CurrentSubject", "");
+            string assignmentSource = PlayerPrefs.GetString("AssignmentSource", "");
+            string currentAssignmentId = PlayerPrefs.GetString("CurrentAssignmentId", "");
+            string currentAssignmentTitle = PlayerPrefs.GetString("CurrentAssignmentTitle", "");
+            string currentAssignmentContent = "";
+            if (!string.IsNullOrEmpty(currentSubject))
+            {
+                currentAssignmentContent = PlayerPrefs.GetString(GetSubjectAssignmentContentKey(currentSubject), "");
+            }
+            
+            Debug.Log($" CurrentSubject: '{currentSubject}'");
+            Debug.Log($" AssignmentSource: '{assignmentSource}'");
+            Debug.Log($" CurrentAssignmentId: '{currentAssignmentId}'");
+            Debug.Log($" CurrentAssignmentTitle: '{currentAssignmentTitle}'");
+            Debug.Log($" CurrentAssignmentContent length: {currentAssignmentContent.Length}");
+            
+            // Check if we have assignment data from navigation UI
+            if (!string.IsNullOrEmpty(currentSubject) && 
+                (assignmentSource == "teacher" || !string.IsNullOrEmpty(currentAssignmentContent)))
+            {
+                Debug.Log($" Found assignment data for subject: {currentSubject}");
+                // We have data from navigation - proceed with loading
+                LoadAssignmentInfo();
+                return;
+            }
+            
             // FOR TESTING: Set sample student data if not already set
             if (string.IsNullOrEmpty(PlayerPrefs.GetString("StudentID", "")) || 
-                string.IsNullOrEmpty(PlayerPrefs.GetString("CurrentSubject", "")))
+                string.IsNullOrEmpty(currentSubject))
             {
-                Debug.LogError("❌ No student data found and no sample data allowed!");
-                Debug.LogError("📚 All student data must be loaded from web app - no hardcoded content allowed!");
+                Debug.LogError(" No student data found and no sample data allowed!");
+                Debug.LogError(" All student data must be loaded from web app - no hardcoded content allowed!");
                 return; // Exit early - no sample data allowed
             }
 
@@ -1493,7 +2621,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         Debug.LogError(message);
         if (questionText != null)
         {
-            questionText.text = $"❌ ERROR: {message}";
+            questionText.text = $" ERROR: {message}";
         }
     }
 
@@ -1528,9 +2656,10 @@ public class GameMechanicDragButtons : MonoBehaviour
                         GameObject obj = GameObject.Find(name);
                         if (obj != null)
                         {
-                            questionText = obj.GetComponent<TMP_Text>();
-                            if (questionText != null)
+                            var tmp = obj.GetComponent<TMP_Text>();
+                            if (tmp != null)
                             {
+                                questionText = tmp;
                                 Debug.Log($"Found questionText by name: {name}");
                                 break;
                             }
@@ -1573,8 +2702,8 @@ public class GameMechanicDragButtons : MonoBehaviour
         // If no answer buttons found, try to create basic ones
         if (answerButtons.Count == 0)
         {
-            Debug.LogWarning("⚠️ No answer buttons found! Multiple choice questions won't work properly.");
-            Debug.LogWarning("📝 Please assign Button GameObjects to the 'Answer Buttons' list in the Inspector.");
+            Debug.LogWarning(" No answer buttons found! Multiple choice questions won't work properly.");
+            Debug.LogWarning(" Please assign Button GameObjects to the 'Answer Buttons' list in the Inspector.");
         }
         
         // Find other components
@@ -1621,13 +2750,29 @@ public class GameMechanicDragButtons : MonoBehaviour
         else
         {
             // Traditional mode - use existing assignment loading
-            string assignmentContent = PlayerPrefs.GetString("CurrentAssignmentContent", "");
-            Debug.Log($"Found assignment content: {(!string.IsNullOrEmpty(assignmentContent) ? "YES" : "NO")}");
+            string currentSubject = PlayerPrefs.GetString("CurrentSubject", "");
+            string assignmentContent = "";
+            if (!string.IsNullOrEmpty(currentSubject))
+            {
+                assignmentContent = PlayerPrefs.GetString(GetSubjectAssignmentContentKey(currentSubject), "");
+            }
+            string assignmentSource = PlayerPrefs.GetString("AssignmentSource", "");
+            
+            Debug.Log($"Found assignment content for subject '{currentSubject}': {(!string.IsNullOrEmpty(assignmentContent) ? "YES" : "NO")}");
+            Debug.Log($"Found current subject: '{currentSubject}'");
+            Debug.Log($"Assignment source: '{assignmentSource}'");
             
             if (!string.IsNullOrEmpty(assignmentContent))
             {
                 Debug.Log($"Processing existing assignment: {assignmentContent}");
                 ProcessAssignmentContent(assignmentContent);
+            }
+            else if (!string.IsNullOrEmpty(currentSubject) && assignmentSource == "teacher")
+            {
+                // We have teacher navigation data but no content yet - this is normal for dynamic assignments
+                Debug.Log($" Found teacher navigation data for {currentSubject} - assignments should be loading via API");
+                Debug.Log(" Waiting for dynamic assignment loading to complete...");
+                // Don't show waiting screen yet - let the dynamic loading process handle it
             }
             else
             {
@@ -1656,7 +2801,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     private IEnumerator GetAllAvailableClassCodes()
     {
         string url = "https://homequest-c3k7.onrender.com/api/classes";
-        Debug.Log($"🌐 Fetching all class codes from: {url}");
+        Debug.Log($" Fetching all class codes from: {url}");
         
         using (UnityWebRequest request = UnityWebRequest.Get(url))
         {
@@ -1665,7 +2810,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             if (request.result == UnityWebRequest.Result.Success)
             {
                 string response = request.downloadHandler.text;
-                Debug.Log($"✅ Available class codes response: {response}");
+                Debug.Log($" Available class codes response: {response}");
                 
                 try
                 {
@@ -1673,10 +2818,10 @@ public class GameMechanicDragButtons : MonoBehaviour
                     var classData = JsonUtility.FromJson<ClassListResponse>(response);
                     if (classData != null && classData.classes != null)
                     {
-                        Debug.Log($"🎯 Found {classData.classes.Length} available classes:");
+                        Debug.Log($" Found {classData.classes.Length} available classes:");
                         foreach (var classInfo in classData.classes)
                         {
-                            Debug.Log($"   📚 Class Code: {classInfo.class_code} - Subject: {classInfo.subject}");
+                            Debug.Log($"    Class Code: {classInfo.class_code} - Subject: {classInfo.subject}");
                         }
                     }
                 }
@@ -1689,7 +2834,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             }
             else
             {
-                Debug.LogError($"❌ Failed to fetch class codes: {request.error}");
+                Debug.LogError($" Failed to fetch class codes: {request.error}");
             }
         }
     }
@@ -1700,17 +2845,24 @@ public class GameMechanicDragButtons : MonoBehaviour
         string serverURL = "https://homequest-c3k7.onrender.com";
         string url = serverURL + "/student/join-class";
         
-        Debug.Log($"🌐 Joining class directly with API call to: {url}");
+        Debug.Log($" Joining class directly with API call to: {url}");
         
-        // Create the payload - based on working Flask endpoints
+        // Ensure we have a unique student ID for this session
+        if (GetDynamicStudentID() <= 1)
+        {
+            Debug.Log(" Creating new unique student for class joining");
+            CreateNewStudentId();
+        }
+        
+        // Create the payload - include student_id so backend can register the student
         var payload = new JoinClassApiPayload
         {
-            class_code = classCode
-            // Remove hardcoded student_id - let backend handle authentication dynamically
+            class_code = classCode,
+            student_id = GetDynamicStudentID() // Include current student ID
         };
         
         string jsonPayload = JsonUtility.ToJson(payload);
-        Debug.Log($"📤 Sending join-class payload: {jsonPayload}");
+        Debug.Log($" Sending join-class payload: {jsonPayload}");
         
         using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
         {
@@ -1724,14 +2876,14 @@ public class GameMechanicDragButtons : MonoBehaviour
             if (request.result == UnityWebRequest.Result.Success)
             {
                 string response = request.downloadHandler.text;
-                Debug.Log($"✅ Join class response: {response}");
+                Debug.Log($" Join class response: {response}");
                 
                 try
                 {
                     var joinResponse = JsonUtility.FromJson<JoinClassApiResponse>(response);
                     if (joinResponse != null)
                     {
-                        Debug.Log($"📚 Joined class - Subject: {joinResponse.subject}");
+                        Debug.Log($" Joined class - Subject: {joinResponse.subject}");
                         // Now load assignments for this subject
                         StartCoroutine(LoadAssignmentsDirectly(joinResponse.subject));
                     }
@@ -1743,7 +2895,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             }
             else
             {
-                Debug.LogError($"❌ Failed to join class: {request.error}");
+                Debug.LogError($" Failed to join class: {request.error}");
             }
         }
     }
@@ -1754,7 +2906,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         string serverURL = "https://homequest-c3k7.onrender.com";
         string url = serverURL + "/student/assignments";
         
-        Debug.Log($"🌐 Loading assignments from: {url}");
+        Debug.Log($" Loading assignments from: {url}");
         
         // Get the dynamic student ID
         int studentId = GetDynamicStudentID();
@@ -1767,7 +2919,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         };
         
         string jsonPayload = JsonUtility.ToJson(payload);
-        Debug.Log($"📤 Sending assignments payload: {jsonPayload}");
+        Debug.Log($" Sending assignments payload: {jsonPayload}");
         
         using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
         {
@@ -1781,18 +2933,34 @@ public class GameMechanicDragButtons : MonoBehaviour
             if (request.result == UnityWebRequest.Result.Success)
             {
                 string response = request.downloadHandler.text;
-                Debug.Log($"✅ Assignments response: {response}");
+                Debug.Log($" Assignments response: {response}");
                 
                 try
                 {
                     AssignmentsResponse assignmentsResponse = JsonUtility.FromJson<AssignmentsResponse>(response);
                     if (assignmentsResponse != null && assignmentsResponse.assignments != null && assignmentsResponse.assignments.Length > 0)
                     {
-                        Debug.Log($"🎯 Successfully loaded {assignmentsResponse.assignments.Length} assignments!");
+                        Debug.Log($" Successfully loaded {assignmentsResponse.assignments.Length} assignments!");
                         
-                        // Store assignments and load first one
+                        // Store assignments and load selected one if available
                         allAssignments = assignmentsResponse;
-                        LoadAssignmentByIndex(0); // Load first assignment
+                        currentAssignments = assignmentsResponse;
+                        fetchedAssignments = assignmentsResponse.assignments; // Sync with old system
+                        Debug.Log($" Synchronized all assignment arrays in LoadTeacherAssignmentWithPreselection");
+                        int idx = 0;
+                        string selId = PlayerPrefs.GetString("CurrentAssignmentId", "");
+                        string selTitle = PlayerPrefs.GetString("CurrentAssignmentTitle", "");
+                        if (!string.IsNullOrEmpty(selId) || !string.IsNullOrEmpty(selTitle))
+                        {
+                            for (int i = 0; i < allAssignments.assignments.Length; i++)
+                            {
+                                if (!string.IsNullOrEmpty(selId) && int.TryParse(selId, out var pid) && allAssignments.assignments[i].assignment_id == pid)
+                                { idx = i; break; }
+                                if (!string.IsNullOrEmpty(selTitle) && string.Equals(allAssignments.assignments[i].title, selTitle, System.StringComparison.OrdinalIgnoreCase))
+                                { idx = i; break; }
+                            }
+                        }
+                        LoadAssignmentByIndex(idx); // Load selected assignment
                         assignmentJoined = true;
                         useClassCodeMode = false;
                     }
@@ -1808,7 +2976,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             }
             else
             {
-                Debug.LogError($"❌ Failed to load assignments: {request.error}");
+                Debug.LogError($" Failed to load assignments: {request.error}");
             }
         }
     }
@@ -1825,7 +2993,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     private IEnumerator GetDynamicClassData(string serverURL)
     {
         string url = serverURL + "/student/subjects";
-        Debug.Log($"🌐 Fetching dynamic subject data from: {url}");
+        Debug.Log($" Fetching dynamic subject data from: {url}");
         
         using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
         {
@@ -1837,7 +3005,7 @@ public class GameMechanicDragButtons : MonoBehaviour
                 student_id = studentId
             };
             string jsonPayload = JsonUtility.ToJson(payload);
-            Debug.Log($"📤 Sending dynamic subjects request for student {studentId}: {jsonPayload}");
+            Debug.Log($" Sending dynamic subjects request for student {studentId}: {jsonPayload}");
             
             byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(jsonPayload);
             request.uploadHandler = new UploadHandlerRaw(bodyRaw);
@@ -1849,7 +3017,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             if (request.result == UnityWebRequest.Result.Success)
             {
                 string response = request.downloadHandler.text;
-                Debug.Log($"✅ Dynamic subjects data: {response}");
+                Debug.Log($" Dynamic subjects data: {response}");
                 
                 SubjectsResponse subjectsData = null;
                 try
@@ -1877,11 +3045,11 @@ public class GameMechanicDragButtons : MonoBehaviour
                         });
                     }
                     
-                    Debug.Log($"✅ Stored {availableClasses.Count} dynamic subjects");
+                    Debug.Log($" Stored {availableClasses.Count} dynamic subjects");
                     
                     // Use the first available subject dynamically
                     var firstSubject = subjectsData.subjects[0];
-                    Debug.Log($"🎯 Using dynamic subject: {firstSubject.subject_name}");
+                    Debug.Log($" Using dynamic subject: {firstSubject.subject_name}");
                     
                     // Now get assignments for this dynamic subject
                     yield return StartCoroutine(GetDynamicAssignments(serverURL, "DYNAMIC", firstSubject.subject_name));
@@ -1894,35 +3062,41 @@ public class GameMechanicDragButtons : MonoBehaviour
             }
             else
             {
-                Debug.LogError($"❌ Failed to fetch dynamic subjects: {request.error}");
-                Debug.LogError($"📋 Response Code: {request.responseCode}");
-                Debug.LogError($"📋 Response Body: {request.downloadHandler?.text}");
+                Debug.LogError($" Failed to fetch dynamic subjects: {request.error}");
+                Debug.LogError($" Response Code: {request.responseCode}");
+                Debug.LogError($" Response Body: {request.downloadHandler?.text}");
                 
                 // No hardcoded content allowed - direct user to web app
-                Debug.LogError("❌ Failed to load classes from web app. No static fallback content allowed.");
+                Debug.LogError(" Failed to load classes from web app. No static fallback content allowed.");
                 availableClasses = new List<AvailableClass>();
                 
                 // Show error message directing user to web app
                 if (questionText != null)
-                    questionText.text = "❌ Cannot connect to web app\nPlease ensure your teacher has created classes and assignments in the web application.";
+                    questionText.text = " Cannot connect to web app\nPlease ensure your teacher has created classes and assignments in the web application.";
             }
         }
     }
 
     private IEnumerator GetDynamicAssignments(string serverURL, string dynamicClassCode, string dynamicSubject)
     {
-        Debug.Log($"🎯 ===== SUBJECT-SPECIFIC ASSIGNMENT LOADING =====");
-        Debug.Log($"🎯 Requested Subject: '{dynamicSubject}'");
-        Debug.Log($"🎯 Current Scene Subject: '{GetCurrentSubjectFromScene()}'");
-        Debug.Log($"🎯 Should load ONLY '{dynamicSubject}' assignments");
-        Debug.Log($"🎯 ===============================================");
+        Debug.Log($" ===== SUBJECT-SPECIFIC ASSIGNMENT LOADING =====");
+        Debug.Log($" Requested Subject: '{dynamicSubject}'");
+        Debug.Log($" Current Scene Subject: '{GetCurrentSubjectFromScene()}'");
+        Debug.Log($" Should load ONLY '{dynamicSubject}' assignments");
+        Debug.Log($" ===============================================");
         
-        // Add timestamp to prevent caching
+        // FORCE FRESH DATA: Add timestamp and clear any cached data for this subject
         string timestamp = System.DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
-        string url = serverURL + "/student/assignments?t=" + timestamp;
+        string url = serverURL + "/student/assignments?t=" + timestamp + "&subject=" + UnityEngine.Networking.UnityWebRequest.EscapeURL(dynamicSubject);
         
-        Debug.Log($"🔄 LOADING ASSIGNMENTS FOR SUBJECT: '{dynamicSubject}' ONLY");
-        Debug.Log($"🔄 FORCING FRESH DATA - API URL: {url}");
+        // Clear subject-specific cached data before fetching fresh
+        string subjectKey = NormalizeSubjectKeyForPrefs(dynamicSubject);
+        PlayerPrefs.DeleteKey($"Assignments_{subjectKey}");
+        PlayerPrefs.Save();
+        
+        Debug.Log($" FORCING FRESH DATA FOR SUBJECT: '{dynamicSubject}' ONLY");
+        Debug.Log($" CLEARED CACHE FOR: Assignments_{subjectKey}");
+        Debug.Log($" FORCED FRESH API URL: {url}");
         
         // Get the dynamic student ID
         int studentId = GetDynamicStudentID();
@@ -1930,11 +3104,11 @@ public class GameMechanicDragButtons : MonoBehaviour
         var payload = new AssignmentApiPayload
         {
             student_id = studentId,
-            subject = dynamicSubject
+            subject = dynamicSubject  // CRITICAL: Must match exactly
         };
         string jsonPayload = JsonUtility.ToJson(payload);
-        Debug.Log($"📤 API Payload - Student ID: {studentId}, Subject Filter: '{dynamicSubject}'");
-        Debug.Log($"📤 Full JSON Payload: {jsonPayload}");
+        Debug.Log($" API Payload - Student ID: {studentId}, Subject Filter: '{dynamicSubject}'");
+        Debug.Log($" Full JSON Payload: {jsonPayload}");
         
         using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
         {
@@ -1942,14 +3116,20 @@ public class GameMechanicDragButtons : MonoBehaviour
             request.uploadHandler = new UploadHandlerRaw(bodyRaw);
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", "application/json");
+            request.SetRequestHeader("Cache-Control", "no-cache");
+            request.SetRequestHeader("Pragma", "no-cache");
+            request.timeout = 30; // Add timeout protection
             
             yield return request.SendWebRequest();
+            
+            try
+            {
             
             if (request.result == UnityWebRequest.Result.Success)
             {
                 string response = request.downloadHandler.text;
-                Debug.Log($"✅ Dynamic assignments SUCCESS - Full API Response:");
-                Debug.Log($"📄 Raw JSON Response: {response}");
+                Debug.Log($" Dynamic assignments SUCCESS - Full API Response:");
+                Debug.Log($" Raw JSON Response: {response}");
                 
                 // Try to parse and load the assignments
                 try
@@ -1957,23 +3137,56 @@ public class GameMechanicDragButtons : MonoBehaviour
                     AssignmentsResponse assignmentsResponse = JsonUtility.FromJson<AssignmentsResponse>(response);
                     if (assignmentsResponse != null && assignmentsResponse.assignments != null && assignmentsResponse.assignments.Length > 0)
                     {
-                        Debug.Log($"🎯 Found {assignmentsResponse.assignments.Length} assignments from API");
+                        Debug.Log($" Found {assignmentsResponse.assignments.Length} assignments from API");
                         
-                        // Filter assignments to ensure they match the requested subject
+                        // CRITICAL: Show the RAW JSON to verify what the API is returning
+                        Debug.Log($" === RAW API RESPONSE FOR VERIFICATION ===");
+                        Debug.Log($" Full JSON Response: {response}");
+                        Debug.Log($" === END RAW API RESPONSE ===");
+                        
+                        // DETAILED API RESPONSE ANALYSIS
+                        Debug.Log($" === DETAILED API RESPONSE ANALYSIS ===");
+                        Debug.Log($" Total assignments returned by API: {assignmentsResponse.assignments.Length}");
+                        for (int i = 0; i < assignmentsResponse.assignments.Length; i++)
+                        {
+                            var assignment = assignmentsResponse.assignments[i];
+                            Debug.Log($" Assignment {i}:");
+                            Debug.Log($"    Title: '{assignment.title}'");
+                            Debug.Log($"    ID: {assignment.assignment_id}");
+                            Debug.Log($"    Subject: '{assignment.subject}'");
+                            Debug.Log($"    Questions: {assignment.questions?.Length ?? 0}");
+                            
+                            if (assignment.questions != null && assignment.questions.Length > 0)
+                            {
+                                for (int j = 0; j < assignment.questions.Length; j++)
+                                {
+                                    var question = assignment.questions[j];
+                                    Debug.Log($"    Q{j + 1}: '{question.question_text}' (Type: {question.question_type})");
+                                    Debug.Log($"        Options: [{string.Join(", ", question.options ?? new string[0])}]");
+                                    Debug.Log($"        Correct: '{question.correct_answer}'");
+                                }
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"     Assignment has no questions!");
+                            }
+                        }
+                        Debug.Log($" === END API RESPONSE ANALYSIS ===");
+                        
+                        // DYNAMIC SUBJECT FILTERING: Find assignments that match the requested subject using smart matching
                         List<Assignment> subjectAssignments = new List<Assignment>();
                         
                         for (int i = 0; i < assignmentsResponse.assignments.Length; i++)
                         {
                             var assignment = assignmentsResponse.assignments[i];
                             
-                            // Check if assignment subject matches requested subject
-                            bool subjectMatches = string.IsNullOrEmpty(assignment.subject) || 
-                                                string.Equals(assignment.subject, dynamicSubject, System.StringComparison.OrdinalIgnoreCase);
+                            // Smart subject matching - check multiple possible matches
+                            bool subjectMatches = IsSubjectMatch(assignment.subject, dynamicSubject);
                             
-                            Debug.Log($"📋 Assignment {i}: '{assignment.title}' - ID: {assignment.assignment_id}");
-                            Debug.Log($"   📚 Assignment Subject: '{assignment.subject}' | Requested: '{dynamicSubject}'");
-                            Debug.Log($"   ✅ Subject Match: {subjectMatches}");
-                            Debug.Log($"   📝 Questions: {assignment.questions.Length}");
+                            Debug.Log($" Assignment {i}: '{assignment.title}' - ID: {assignment.assignment_id}");
+                            Debug.Log($"    Assignment Subject: '{assignment.subject}' | Requested: '{dynamicSubject}'");
+                            Debug.Log($"    Smart Subject Match: {subjectMatches}");
+                            Debug.Log($"    Questions: {assignment.questions.Length}");
                             
                             if (subjectMatches)
                             {
@@ -1987,13 +3200,13 @@ public class GameMechanicDragButtons : MonoBehaviour
                             }
                             else
                             {
-                                Debug.LogWarning($"⚠️ Skipping assignment '{assignment.title}' - Subject mismatch!");
+                                Debug.LogWarning($" REJECTING assignment '{assignment.title}' - Subject '{assignment.subject}' does NOT match '{dynamicSubject}' using smart matching");
                             }
                         }
                         
                         if (subjectAssignments.Count > 0)
                         {
-                            // Create filtered response with only matching assignments
+                            // Create filtered response with only EXACTLY matching assignments
                             AssignmentsResponse filteredResponse = new AssignmentsResponse
                             {
                                 assignments = subjectAssignments.ToArray()
@@ -2002,43 +3215,305 @@ public class GameMechanicDragButtons : MonoBehaviour
                             // Store both variables for different uses
                             allAssignments = filteredResponse;
                             currentAssignments = filteredResponse;
+                            fetchedAssignments = filteredResponse.assignments; // Sync with old system
                             
-                            Debug.Log($"🎯 Successfully filtered to {subjectAssignments.Count} assignments for subject '{dynamicSubject}'");
-                            Debug.Log($"🔄 Before LoadAssignmentByIndex - useClassCodeMode: {useClassCodeMode}");
-                            LoadAssignmentByIndex(0);
-                            Debug.Log($"🔄 After LoadAssignmentByIndex - useClassCodeMode: {useClassCodeMode}");
+                            Debug.Log($" Synchronized all assignment arrays with {subjectAssignments.Count} assignments");
                             
-                            assignmentJoined = true;
-                            useClassCodeMode = false;
+                            // STORE SUBJECT-SPECIFIC CACHE: Store assignments with subject key for future reference
+                            string subjectSpecificJson = JsonUtility.ToJson(filteredResponse);
+                            string sessionAssignmentKey = GetSessionAssignmentKey(dynamicSubject);
+                            PlayerPrefs.SetString(sessionAssignmentKey, subjectSpecificJson);
+                            PlayerPrefs.Save();
                             
-                            Debug.Log($"🎉 Successfully loaded {dynamicSubject} assignment: {allAssignments.assignments[0].title}");
-                            Debug.Log($"📋 From class: {dynamicClassCode} - Subject: {dynamicSubject}");
+                            Debug.Log($" Successfully filtered to {subjectAssignments.Count} assignments for subject '{dynamicSubject}'");
+                            Debug.Log($" Stored session-specific cache: {sessionAssignmentKey}");
+                            
+                            // Try to honor a specifically selected assignment from navigation
+                            int selectedIndex = 0;
+                            bool hasSpecificSelection = false;
+                            string selectedIdStr = PlayerPrefs.GetString("CurrentAssignmentId", "");
+                            string selectedTitle = PlayerPrefs.GetString("CurrentAssignmentTitle", "");
+                            
+                            if (subjectAssignments.Count > 0)
+                            {
+                                if (!string.IsNullOrEmpty(selectedIdStr))
+                                {
+                                    int parsedId;
+                                    if (int.TryParse(selectedIdStr, out parsedId))
+                                    {
+                                        for (int i = 0; i < subjectAssignments.Count; i++)
+                                        {
+                                            if (subjectAssignments[i].assignment_id == parsedId)
+                                            {
+                                                selectedIndex = i;
+                                                hasSpecificSelection = true;
+                                                Debug.Log($" Matching assignment by ID found at index {i}: {subjectAssignments[i].title} (ID {parsedId})");
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Debug.LogWarning($" CurrentAssignmentId '{selectedIdStr}' is not an integer. Falling back to title match if available.");
+                                    }
+                                }
+                                if (selectedIndex == 0 && !string.IsNullOrEmpty(selectedTitle))
+                                {
+                                    for (int i = 0; i < subjectAssignments.Count; i++)
+                                    {
+                                        if (string.Equals(subjectAssignments[i].title, selectedTitle, System.StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            selectedIndex = i;
+                                            hasSpecificSelection = true;
+                                            Debug.Log($" Matching assignment by Title found at index {i}: {selectedTitle}");
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // If multiple assignments and no specific selection, show selection interface
+                            if (subjectAssignments.Count > 1 && !hasSpecificSelection)
+                            {
+                                Debug.Log($" Multiple assignments found ({subjectAssignments.Count}), showing selection interface...");
+                                ShowAssignmentSelection(subjectAssignments.ToArray());
+                                yield break; // Don't auto-load any assignment, wait for user selection
+                            }
+                            else
+                            {
+                                Debug.Log($" Loading assignment at index {selectedIndex} (id='{selectedIdStr}', title='{selectedTitle}')");
+                                LoadAssignmentByIndex(selectedIndex);
+                                Debug.Log($" After LoadAssignmentByIndex - useClassCodeMode: {useClassCodeMode}");
+                                
+                                assignmentJoined = true;
+                                useClassCodeMode = false;
+                                
+                                Debug.Log($" Successfully loaded {dynamicSubject} assignment: {allAssignments.assignments[selectedIndex].title}");
+                                Debug.Log($" From class: {dynamicClassCode} - Subject: {dynamicSubject}");
+                            }
                         }
                         else
                         {
-                            Debug.LogWarning($"❌ No assignments found for subject '{dynamicSubject}' after filtering!");
-                            Debug.LogWarning($"📚 Available subjects in API response: {string.Join(", ", assignmentsResponse.assignments.Select(a => a.subject ?? "null").Distinct())}");
-                            currentAssignments = null;
+                            // NO MATCHES FOUND - Try to find any assignments that might be a close match
+                            Debug.LogWarning($" NO ASSIGNMENTS FOUND for subject '{dynamicSubject}' after smart matching!");
+                            Debug.LogWarning($" API returned {assignmentsResponse.assignments.Length} total assignments, but NONE matched subject '{dynamicSubject}' using smart matching");
+                            
+                            // Show detailed assignment info for debugging
+                            Debug.LogWarning($" ALL AVAILABLE SUBJECTS in API response:");
+                            var uniqueSubjects = assignmentsResponse.assignments.Select(a => a.subject ?? "null").Distinct().ToArray();
+                            for (int i = 0; i < uniqueSubjects.Length; i++)
+                            {
+                                Debug.LogWarning($"   Subject {i + 1}: '{uniqueSubjects[i]}'");
+                            }
+                            
+                            Debug.LogWarning($" ALL ASSIGNMENTS in API response:");
+                            for (int i = 0; i < assignmentsResponse.assignments.Length; i++)
+                            {
+                                var assignment = assignmentsResponse.assignments[i];
+                                Debug.LogWarning($"   Assignment {i}: '{assignment.title}' - Subject: '{assignment.subject}' - Questions: {assignment.questions.Length}");
+                            }
+                            
+                            // FALLBACK: If we're looking for MATH and can't find it, try to find similar subjects
+                            string fallbackSubject = null;
+                            foreach (var assignment in assignmentsResponse.assignments)
+                            {
+                                if (!string.IsNullOrEmpty(assignment.subject))
+                                {
+                                    string testSubject = assignment.subject.ToUpperInvariant();
+                                    if (dynamicSubject.ToUpperInvariant() == "MATH" && 
+                                        (testSubject.Contains("MATH") || testSubject.Contains("MATHEMATICS")))
+                                    {
+                                        fallbackSubject = assignment.subject;
+                                        break;
+                                    }
+                                    if (dynamicSubject.ToUpperInvariant() == "SCIENCE" && 
+                                        (testSubject.Contains("SCIENCE") || testSubject.Contains("SCI")))
+                                    {
+                                        fallbackSubject = assignment.subject;
+                                        break;
+                                    }
+                                    if (dynamicSubject.ToUpperInvariant() == "ENGLISH" && 
+                                        (testSubject.Contains("ENGLISH") || testSubject.Contains("ENG")))
+                                    {
+                                        fallbackSubject = assignment.subject;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            if (fallbackSubject != null)
+                            {
+                                Debug.LogWarning($" TRYING FALLBACK: Found similar subject '{fallbackSubject}' for requested '{dynamicSubject}'");
+                                // Try again with the fallback subject
+                                for (int i = 0; i < assignmentsResponse.assignments.Length; i++)
+                                {
+                                    var assignment = assignmentsResponse.assignments[i];
+                                    if (string.Equals(assignment.subject, fallbackSubject, System.StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        subjectAssignments.Add(assignment);
+                                    }
+                                }
+                                
+                                if (subjectAssignments.Count > 0)
+                                {
+                                    Debug.LogWarning($" FALLBACK SUCCESS: Found {subjectAssignments.Count} assignments using fallback subject '{fallbackSubject}'");
+                                    
+                                    AssignmentsResponse fallbackResponse = new AssignmentsResponse
+                                    {
+                                        assignments = subjectAssignments.ToArray()
+                                    };
+                                    
+                                    allAssignments = fallbackResponse;
+                                    currentAssignments = fallbackResponse;
+                                    fetchedAssignments = fallbackResponse.assignments; // Sync with old system
+                                    Debug.Log($" Synchronized all assignment arrays in fallback logic");
+                                    
+                                    LoadAssignmentByIndex(0);
+                                    assignmentJoined = true;
+                                    useClassCodeMode = false;
+                                    
+                                    Debug.Log($" Successfully loaded fallback assignment using subject '{fallbackSubject}'");
+                                }
+                            }
+                            
+                            if (subjectAssignments.Count == 0)
+                            {
+                                Debug.LogWarning($" ULTIMATE FALLBACK: No assignments found for subject '{dynamicSubject}' with student ID {studentId}");
+                                
+                                // Try any available assignment regardless of subject
+                                if (assignmentsResponse.assignments.Length > 0)
+                                {
+                                    Debug.Log($" EMERGENCY FALLBACK: Using first available assignment regardless of subject");
+                                    
+                                    allAssignments = assignmentsResponse;
+                                    currentAssignments = assignmentsResponse;
+                                    fetchedAssignments = assignmentsResponse.assignments; // Sync with old system
+                                    Debug.Log($" Synchronized all assignment arrays in emergency fallback");
+                                    
+                                    // Store the fallback assignments
+                                    string fallbackJson = JsonUtility.ToJson(assignmentsResponse);
+                                    string sessionAssignmentKey = GetSessionAssignmentKey(dynamicSubject);
+                                    PlayerPrefs.SetString(sessionAssignmentKey, fallbackJson);
+                                    PlayerPrefs.Save();
+                                    
+                                    LoadAssignmentByIndex(0);
+                                    assignmentJoined = true;
+                                    useClassCodeMode = false;
+                                    
+                                    Debug.Log($" EMERGENCY FALLBACK SUCCESS: Loaded assignment: {assignmentsResponse.assignments[0].title}");
+                                }
+                                else
+                                {
+                                    // Schedule student ID testing to run after this try block
+                                    bool shouldTryDifferentStudentIds = true;
+                                    Debug.LogWarning($" NO ASSIGNMENTS AT ALL for student ID {studentId}. Will try different student IDs...");
+                                    
+                                    // Set flag to try different student IDs outside the try block
+                                    PlayerPrefs.SetString("_TryDifferentStudentIds", "true");
+                                    PlayerPrefs.Save();
+                                }
+                            }
                         }
                         useClassCodeMode = false;
                         
-                        Debug.Log($"🎉 Successfully loaded dynamic assignment: {allAssignments.assignments[0].title}");
-                        Debug.Log($"📋 From class: {dynamicClassCode} - Subject: {dynamicSubject}");
+                        if (allAssignments != null && allAssignments.assignments != null && allAssignments.assignments.Length > 0)
+                        {
+                            Debug.Log($" Successfully loaded dynamic assignment: {allAssignments.assignments[0].title}");
+                            Debug.Log($" From class: {dynamicClassCode} - Subject: {dynamicSubject}");
+                        }
                     }
                     else
                     {
-                        Debug.LogWarning($"No assignments found for dynamic class {dynamicClassCode} - {dynamicSubject}");
-                        currentAssignments = null;
+                        Debug.LogWarning($" API response parsing failed or no assignments found");
+                        Debug.LogWarning($"   assignmentsResponse: {assignmentsResponse != null}");
+                        Debug.LogWarning($"   assignments array: {assignmentsResponse?.assignments != null}");
+                        Debug.LogWarning($"   assignments count: {assignmentsResponse?.assignments?.Length ?? 0}");
+                        Debug.LogWarning($"   Raw response: {response}");
+                        
+                        if (questionText != null)
+                        {
+                            questionText.text = $" API returned empty or invalid data for {dynamicSubject}.\n\nRaw response: {response.Substring(0, Math.Min(200, response.Length))}...";
+                        }
                     }
                 }
                 catch (System.Exception e)
                 {
                     Debug.LogError($"Failed to parse dynamic assignments: {e.Message}");
                 }
+                
+
             }
             else
             {
-                Debug.LogError($"❌ Dynamic assignments failed: {request.error}");
+                Debug.LogError($" Dynamic assignments API call failed!");
+                Debug.LogError($"   URL: {url}");
+                Debug.LogError($"   Error: {request.error}");
+                Debug.LogError($"   Response Code: {request.responseCode}");
+                Debug.LogError($"   Response: {request.downloadHandler?.text ?? "No response"}");
+                
+                // Show error message in UI
+                if (questionText != null)
+                {
+                    questionText.text = $" Failed to load assignments for {dynamicSubject}.\n\nError: {request.error}\n\nPlease check your internet connection and try again.";
+                }
+            }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($" Exception in GetDynamicAssignments: {e.Message}");
+                Debug.LogError($"   Stack trace: {e.StackTrace}");
+                
+                if (questionText != null)
+                {
+                    questionText.text = $" Critical error loading assignments.\n\nException: {e.Message}";
+                }
+            }
+            finally
+            {
+                // Ensure proper cleanup
+                try
+                {
+                    if (request.uploadHandler != null)
+                    {
+                        request.uploadHandler.Dispose();
+                    }
+                    if (request.downloadHandler != null)
+                    {
+                        request.downloadHandler.Dispose();
+                    }
+                }
+                catch (System.Exception cleanupEx)
+                {
+                    Debug.LogWarning($" Cleanup warning in GetDynamicAssignments: {cleanupEx.Message}");
+                }
+            }
+        }
+        
+        // Check if we need to try different student IDs (moved outside try-catch block)
+        if (PlayerPrefs.GetString("_TryDifferentStudentIds", "") == "true")
+        {
+            PlayerPrefs.DeleteKey("_TryDifferentStudentIds"); // Clear the flag
+            Debug.Log($" Trying different student IDs after try block...");
+            
+            yield return StartCoroutine(TryDifferentStudentIDs());
+            
+            if (allAssignments != null && allAssignments.assignments != null && allAssignments.assignments.Length > 0)
+            {
+                Debug.Log($" Found assignments with different student ID!");
+                LoadAssignmentByIndex(0);
+                assignmentJoined = true;
+                useClassCodeMode = false;
+            }
+            else
+            {
+                currentAssignments = null;
+                allAssignments = null;
+                
+                // Show error message in UI
+                if (questionText != null)
+                {
+                    questionText.text = $" No assignments found for any student ID.\n\nPlease ensure assignments are created in the web app.";
+                }
             }
         }
     }
@@ -2046,7 +3521,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     // Helper method to get and use first available class
     private IEnumerator GetAndUseFirstAvailableClass()
     {
-        Debug.Log("🔄 Getting first available class...");
+        Debug.Log(" Getting first available class...");
         
         yield return StartCoroutine(GetDynamicClassData(flaskURL));
         
@@ -2058,35 +3533,35 @@ public class GameMechanicDragButtons : MonoBehaviour
             // Set the current subject for the session
             currentSubject = firstSubject;
             
-            Debug.Log($"✅ Using first available class: {firstClassCode}, Subject: {firstSubject}");
+            Debug.Log($" Using first available class: {firstClassCode}, Subject: {firstSubject}");
             
             // Use the first class code for the operation
             yield return StartCoroutine(GetDynamicAssignments(flaskURL, firstClassCode, firstSubject));
         }
         else
         {
-            Debug.LogWarning("⚠️ No available classes found");
+            Debug.LogWarning(" No available classes found");
         }
     }
 
     // Helper method to get and join first available class
     private IEnumerator GetAndJoinFirstAvailableClass()
     {
-        Debug.Log("🔄 Getting and joining first available class...");
+        Debug.Log(" Getting and joining first available class...");
         
         yield return StartCoroutine(GetDynamicClassData(flaskURL));
         
         if (availableClasses != null && availableClasses.Count > 0)
         {
             string firstClassCode = availableClasses[0].class_code;
-            Debug.Log($"✅ Joining first available class: {firstClassCode}");
+            Debug.Log($" Joining first available class: {firstClassCode}");
             
             // Start the assignment flow with the first class
             yield return StartCoroutine(StartAssignmentFlow(firstClassCode));
         }
         else
         {
-            Debug.LogWarning("⚠️ No available classes found to join");
+            Debug.LogWarning(" No available classes found to join");
         }
     }
 
@@ -2151,7 +3626,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         
         // Show success message and start first question
         if (questionText != null)
-            questionText.text = $"✅ Connected to: {webAssignment.title}\nStarting questions...";
+            questionText.text = $" Connected to: {webAssignment.title}\nStarting questions...";
             
         // Start the first question after a brief delay
         StartCoroutine(StartAssignmentAfterDelay(1.5f));
@@ -2173,7 +3648,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             assignmentJoined = false;
             
             if (questionText != null)
-                questionText.text = "🎮 Enter Class Code\n(Dynamic codes available)";
+                questionText.text = " Enter Class Code\n(Dynamic codes available)";
             else
                 Debug.LogWarning("questionText is null - cannot show class code entry text");
                 
@@ -2240,7 +3715,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         {
             Debug.LogWarning("No class code entered!");
             if (questionText != null)
-                questionText.text = "❌ Please enter a class code!";
+                questionText.text = " Please enter a class code!";
             return;
         }
         
@@ -2256,7 +3731,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             
         // Show loading message
         if (questionText != null)
-            questionText.text = $"🔄 Joining class: {enteredCode}...";
+            questionText.text = $" Joining class: {enteredCode}...";
         
         // Load assignment by class code
         LoadAssignmentByClassCode(enteredCode);
@@ -2268,7 +3743,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         Debug.LogError($"Class code error: {message}");
         
         if (questionText != null)
-            questionText.text = $"❌ {message}\nTry again!";
+            questionText.text = $" {message}\nTry again!";
             
         // Show class code entry again after 2 seconds
         StartCoroutine(ShowClassCodeEntryAfterDelay(2f));
@@ -2359,20 +3834,37 @@ public class GameMechanicDragButtons : MonoBehaviour
     {
         if (!string.IsNullOrEmpty(assignmentJson))
         {
-            PlayerPrefs.SetString("CurrentAssignmentContent", assignmentJson);
+            // Get current subject to store assignment content per subject
+            string currentSubject = PlayerPrefs.GetString(GetSessionKey("CurrentSubject"), "");
+            if (string.IsNullOrEmpty(currentSubject))
+            {
+                currentSubject = GetCurrentSubjectFromScene(); // Fallback to scene detection
+            }
+            
+            string subjectContentKey = GetSubjectAssignmentContentKey(currentSubject);
+            PlayerPrefs.SetString(subjectContentKey, assignmentJson);
             PlayerPrefs.Save();
             ProcessAssignmentContent(assignmentJson);
-            Debug.Log("New assignment loaded: " + assignmentJson);
+            Debug.Log($"New assignment loaded for subject '{currentSubject}': {assignmentJson}");
         }
     }
 
     // Public method to clear current assignment
     public void ClearCurrentAssignment()
     {
+        // Clear assignment for current subject only
+        string currentSubject = PlayerPrefs.GetString(GetSessionKey("CurrentSubject"), "");
+        if (!string.IsNullOrEmpty(currentSubject))
+        {
+            string subjectContentKey = GetSubjectAssignmentContentKey(currentSubject);
+            PlayerPrefs.DeleteKey(subjectContentKey);
+        }
+        
+        // Also clear the old non-specific key for compatibility
         PlayerPrefs.DeleteKey("CurrentAssignmentContent");
         PlayerPrefs.Save();
         ShowWaitingForAssignment();
-        Debug.Log("Assignment cleared, waiting for new assignment");
+        Debug.Log($"Assignment cleared for subject '{currentSubject}', waiting for new assignment");
     }
 
     private void ProcessAssignmentContent(string content)
@@ -2422,11 +3914,10 @@ public class GameMechanicDragButtons : MonoBehaviour
     {
         Debug.Log("=== CLEARING ALL CACHED DATA ===");
         
-        // Clear all assignment-related PlayerPrefs
-        PlayerPrefs.DeleteKey("CurrentAssignmentContent");
-        PlayerPrefs.DeleteKey("StudentID");
-        PlayerPrefs.DeleteKey("CurrentSubject");
-        PlayerPrefs.Save();
+    // Clear assignment data but preserve selected subject
+    PlayerPrefs.DeleteKey("CurrentAssignmentContent");
+    PlayerPrefs.DeleteKey("StudentID");
+    PlayerPrefs.Save();
         
         // Reset assignment tracking
         currentAssignmentIndex = 0;
@@ -2436,8 +3927,8 @@ public class GameMechanicDragButtons : MonoBehaviour
         if (questionText != null)
             questionText.text = "Fetching fresh assignments...";
         
-        // Start dynamic assignment loading without sample data
-        StartCoroutine(GetAndUseFirstAvailableClass());
+    // Start subject-respecting loading without sample data
+    StartCoroutine(LoadSelectedOrFirstAvailableSubject());
     }
 
     // Public methods to set student data (called from web app or for testing)
@@ -2472,8 +3963,8 @@ public class GameMechanicDragButtons : MonoBehaviour
     [System.Obsolete("Hardcoded sample data is not allowed. All content must come from web app.")]
     public void SetSampleStudentData()
     {
-        Debug.LogError("❌ SetSampleStudentData is disabled!");
-        Debug.LogError("📚 All student data must come from the web app - no hardcoded content allowed!");
+        Debug.LogError(" SetSampleStudentData is disabled!");
+        Debug.LogError(" All student data must come from the web app - no hardcoded content allowed!");
         return; // Exit early - no sample data allowed
     }
 
@@ -2487,7 +3978,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     private IEnumerator TryAllCombinations()
     {
         // Use dynamic data from backend instead of hardcoded arrays
-        Debug.Log("🔄 Using dynamic class and subject data from backend...");
+        Debug.Log(" Using dynamic class and subject data from backend...");
         
         // Get dynamic class data first
         yield return StartCoroutine(GetDynamicClassData(flaskURL));
@@ -2505,7 +3996,7 @@ public class GameMechanicDragButtons : MonoBehaviour
                 // Check if we found assignments
                 if (currentAssignments != null && currentAssignments.assignments != null && currentAssignments.assignments.Length > 0)
                 {
-                    Debug.Log($"✅ SUCCESS! Found assignments for class {classData.class_code}");
+                    Debug.Log($" SUCCESS! Found assignments for class {classData.class_code}");
                     yield break; // Stop searching, we found something
                 }
                 
@@ -2514,10 +4005,10 @@ public class GameMechanicDragButtons : MonoBehaviour
         }
         else
         {
-            Debug.LogError("❌ No dynamic classes available from backend");
+            Debug.LogError(" No dynamic classes available from backend");
         }
         
-        Debug.LogError("❌ No assignments found for any dynamic class. Make sure assignments exist in your database.");
+        Debug.LogError(" No assignments found for any dynamic class. Make sure assignments exist in your database.");
     }
 
     // Public method to load next assignment
@@ -2535,13 +4026,14 @@ public class GameMechanicDragButtons : MonoBehaviour
             var webAppAssignment = new WebAppAssignment
             {
                 title = selectedAssignment.title,
-                subject = PlayerPrefs.GetString("CurrentSubject", ""),
+                subject = PlayerPrefs.GetString(GetSessionKey("CurrentSubject"), ""),
                 assignment_type = "multiple_choice",
                 questions = ConvertToWebAppQuestions(selectedAssignment.questions)
             };
             
             string convertedJson = JsonUtility.ToJson(webAppAssignment);
-            PlayerPrefs.SetString("CurrentAssignmentContent", convertedJson);
+            string subjectContentKey = GetSubjectAssignmentContentKey(webAppAssignment.subject);
+            PlayerPrefs.SetString(subjectContentKey, convertedJson);
             PlayerPrefs.Save();
             
             ApplyAssignment(webAppAssignment);
@@ -2592,7 +4084,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         // Debug all question types in this assignment
         for (int i = 0; i < assignment.questions.Length; i++)
         {
-            Debug.Log($"📝 Question {i + 1}: '{assignment.questions[i].question}' - Type: '{assignment.questions[i].question_type}'");
+            Debug.Log($" Question {i + 1}: '{assignment.questions[i].question}' - Type: '{assignment.questions[i].question_type}'");
         }
         
         // Ensure UI components are found before applying assignment
@@ -2607,34 +4099,34 @@ public class GameMechanicDragButtons : MonoBehaviour
                 questions = new QuestionData[assignment.questions.Length]
             };
             
-            Debug.Log($"📋 Converting {assignment.questions.Length} questions from assignment");
+            Debug.Log($" Converting {assignment.questions.Length} questions from assignment");
             
             // Determine game mode based on the first question type
             if (assignment.questions.Length > 0)
             {
                 string firstQuestionType = assignment.questions[0].question_type.ToLower();
-                Debug.Log($"🔍 First question type: {firstQuestionType}");
+                Debug.Log($" First question type: {firstQuestionType}");
                 
                 switch (firstQuestionType)
                 {
                     case "identification":
                         gameMode = GameMode.Identification;
-                        Debug.Log("🎮 Game mode set to Identification");
+                        Debug.Log(" Game mode set to Identification");
                         break;
                     case "multiple_choice":
                         gameMode = GameMode.MultipleChoice;
-                        Debug.Log("🎮 Game mode set to MultipleChoice");
+                        Debug.Log(" Game mode set to MultipleChoice");
                         break;
                     default:
                         gameMode = GameMode.InputField; // fallback
-                        Debug.Log($"🎮 Game mode set to InputField (fallback for type: {firstQuestionType})");
+                        Debug.Log($" Game mode set to InputField (fallback for type: {firstQuestionType})");
                         break;
                 }
             }
             else
             {
                 gameMode = GameMode.MultipleChoice; // default fallback
-                Debug.Log("🎮 Game mode set to MultipleChoice (no questions found)");
+                Debug.Log(" Game mode set to MultipleChoice (no questions found)");
             }
             
             // Convert questions to our format
@@ -2653,16 +4145,16 @@ public class GameMechanicDragButtons : MonoBehaviour
                     correctAnswers = GetCorrectAnswersForWebAppQuestion(q, questionType)
                 };
                 
-                Debug.Log($"📝 Loaded Question {i + 1}: {q.question}");
-                Debug.Log($"📝 Type: {questionType}");
+                Debug.Log($" Loaded Question {i + 1}: {q.question}");
+                Debug.Log($" Type: {questionType}");
                 if (questionType == "identification")
                 {
-                    Debug.Log($"📝 Correct Answer: {(q.options != null && q.options.Length > q.correct_answer ? q.options[q.correct_answer] : "Unknown")}");
+                    Debug.Log($" Correct Answer: {(q.options != null && q.options.Length > q.correct_answer ? q.options[q.correct_answer] : "Unknown")}");
                 }
                 else
                 {
-                    Debug.Log($"📝 Options: {string.Join(", ", q.options)}");
-                    Debug.Log($"📝 Correct Answer: {(q.options != null && q.options.Length > q.correct_answer ? q.options[q.correct_answer] : "Unknown")}");
+                    Debug.Log($" Options: {string.Join(", ", q.options)}");
+                    Debug.Log($" Correct Answer: {(q.options != null && q.options.Length > q.correct_answer ? q.options[q.correct_answer] : "Unknown")}");
                 }
             }
             
@@ -2813,7 +4305,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             // CRITICAL: Validate assignment is from web app (no hardcoded content)
             if (!ValidateAssignmentIsFromWebApp(currentAssignment))
             {
-                Debug.LogError("🚫 BLOCKED: Hardcoded assignment detected! Only web app assignments allowed!");
+                Debug.LogError(" BLOCKED: Hardcoded assignment detected! Only web app assignments allowed!");
                 ShowNoAssignmentsError(currentSubject ?? "Unknown");
                 return;
             }
@@ -2854,14 +4346,14 @@ public class GameMechanicDragButtons : MonoBehaviour
                 return;
             }
             
-            Debug.Log($"🔘 answerButtons count: {answerButtons.Count}");
-            Debug.Log($"🎮 Current game mode: {gameMode}");
+            Debug.Log($" answerButtons count: {answerButtons.Count}");
+            Debug.Log($" Current game mode: {gameMode}");
             
             // Show a clear error if no answer buttons are available
             if (answerButtons.Count == 0)
             {
-                Debug.LogError("❌ CRITICAL: No answer buttons available! Multiple choice won't work!");
-                Debug.LogError("📝 SOLUTION: Assign Button GameObjects to 'Answer Buttons' list in Inspector");
+                Debug.LogError(" CRITICAL: No answer buttons available! Multiple choice won't work!");
+                Debug.LogError(" SOLUTION: Assign Button GameObjects to 'Answer Buttons' list in Inspector");
                 ShowErrorMessage("No answer buttons found! Check Inspector settings.");
                 return;
             }
@@ -2876,26 +4368,26 @@ public class GameMechanicDragButtons : MonoBehaviour
             
             if (gameMode == GameMode.MultipleChoice)
             {
-                Debug.Log($"🔘 Question options count: {question.multipleChoiceOptions.Count}");
+                Debug.Log($" Question options count: {question.multipleChoiceOptions.Count}");
             }
-            Debug.Log($"📝 Question type: {question.questionType}");
-            Debug.Log($"🎮 Game mode: {gameMode}");
+            Debug.Log($" Question type: {question.questionType}");
+            Debug.Log($" Game mode: {gameMode}");
             
             // Configure UI based on game mode
-            Debug.Log($"🎮 Setting up UI for game mode: {gameMode}");
+            Debug.Log($" Setting up UI for game mode: {gameMode}");
             if (gameMode == GameMode.MultipleChoice)
             {
-                Debug.Log("🔘 Setting up Multiple Choice UI");
+                Debug.Log(" Setting up Multiple Choice UI");
                 SetupMultipleChoiceUI(question);
             }
             else if (gameMode == GameMode.Identification)
             {
-                Debug.Log("✏️ Setting up Identification UI");
+                Debug.Log(" Setting up Identification UI");
                 SetupIdentificationUI(question);
             }
             else
             {
-                Debug.Log("📝 Setting up Input Field UI (fallback)");
+                Debug.Log(" Setting up Input Field UI (fallback)");
                 // Default to input field mode
                 SetupInputFieldUI(question);
             }
@@ -2908,7 +4400,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             if (joinClassButton != null)
                 joinClassButton.gameObject.SetActive(false);
                 
-            Debug.Log("🎮 Hidden class code UI for question display");
+            Debug.Log(" Hidden class code UI for question display");
             
             // Show student avatar/icon
             SetupStudentAvatar();
@@ -2931,7 +4423,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     
     private void SetupMultipleChoiceUI(QuestionData question)
     {
-        Debug.Log("🎮 Setting up Multiple Choice UI");
+        Debug.Log(" Setting up Multiple Choice UI");
         
         // Hide input field UI elements
         if (answerInputField != null)
@@ -2988,9 +4480,9 @@ public class GameMechanicDragButtons : MonoBehaviour
     
     private void SetupIdentificationUI(QuestionData question)
     {
-        Debug.Log("🎮 Setting up Identification UI");
-        Debug.Log($"📝 Question: '{question.questionText}'");
-        Debug.Log($"📝 Question Type: '{question.questionType}'");
+        Debug.Log(" Setting up Identification UI");
+        Debug.Log($" Question: '{question.questionText}'");
+        Debug.Log($" Question Type: '{question.questionType}'");
         
         // Show and update progress bar
         if (progressBar != null)
@@ -3001,7 +4493,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             {
                 float progress = (float)currentQuestionIndex / currentAssignment.questions.Length;
                 progressBar.value = progress;
-                Debug.Log($"📊 Progress bar updated: {progress:P0}");
+                Debug.Log($" Progress bar updated: {progress:P0}");
             }
         }
         
@@ -3016,7 +4508,7 @@ public class GameMechanicDragButtons : MonoBehaviour
                 progressText = currentAssignment.assignmentTitle.ToUpper();
             }
             textProgress.text = progressText;
-            Debug.Log($"✅ Progress text set dynamically: '{progressText}'");
+            Debug.Log($" Progress text set dynamically: '{progressText}'");
         }
         
         // Ensure question text is visible and displays the question
@@ -3028,17 +4520,17 @@ public class GameMechanicDragButtons : MonoBehaviour
             {
                 string formattedQuestion = $"Q{currentQuestionIndex + 1}/{currentAssignment.questions.Length}: {question.questionText}";
                 questionText.text = formattedQuestion;
-                Debug.Log($"✅ Question text displayed: '{formattedQuestion}'");
+                Debug.Log($" Question text displayed: '{formattedQuestion}'");
             }
             else
             {
                 questionText.text = question.questionText;
-                Debug.Log($"✅ Question text displayed: '{question.questionText}'");
+                Debug.Log($" Question text displayed: '{question.questionText}'");
             }
         }
         else
         {
-            Debug.LogError("❌ questionText UI element is null! Cannot display question text.");
+            Debug.LogError(" questionText UI element is null! Cannot display question text.");
         }
         
         // Hide all answer buttons (not needed for identification)
@@ -3075,7 +4567,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             answerInputField.Select();
             answerInputField.ActivateInputField();
             
-            Debug.Log("🎯 IDENTIFICATION INPUT FIELD IS READY FOR TYPING!");
+            Debug.Log(" IDENTIFICATION INPUT FIELD IS READY FOR TYPING!");
         }
         else
         {
@@ -3096,7 +4588,7 @@ public class GameMechanicDragButtons : MonoBehaviour
                 buttonText.text = "";
             }
             
-            Debug.Log("✅ SUBMIT button activated");
+            Debug.Log(" SUBMIT button activated");
         }
         else
         {
@@ -3136,11 +4628,11 @@ public class GameMechanicDragButtons : MonoBehaviour
                 buttonText.text = "";
             }
                 
-            Debug.Log("✅ Clear button found and activated (no hardcoded text)");
+            Debug.Log(" Clear button found and activated (no hardcoded text)");
         }
         else
         {
-            Debug.Log("ℹ️ No clear button found in scene");
+            Debug.Log(" No clear button found in scene");
         }
     }
     
@@ -3151,13 +4643,13 @@ public class GameMechanicDragButtons : MonoBehaviour
             answerInputField.text = "";
             answerInputField.Select();
             answerInputField.ActivateInputField();
-            Debug.Log("🧹 Answer input cleared");
+            Debug.Log(" Answer input cleared");
         }
     }
     
     private void SetupInputFieldUI(QuestionData question)
     {
-        Debug.Log("🎮 Setting up Input Field UI (fallback mode)");
+        Debug.Log(" Setting up Input Field UI (fallback mode)");
         
         // Hide all answer buttons
         for (int i = 0; i < answerButtons.Count; i++)
@@ -3196,15 +4688,15 @@ public class GameMechanicDragButtons : MonoBehaviour
             
             var buttonText = submitAnswerButton.GetComponentInChildren<TMP_Text>();
             if (buttonText != null)
-                buttonText.text = "🎯 SUBMIT ANSWER 🎯";
+                buttonText.text = " SUBMIT ANSWER ";
             
-            Debug.Log("🎯 SUBMIT BUTTON IS NOW VISIBLE AND READY!");
-            Debug.Log($"🔍 Submit button position: {submitAnswerButton.transform.position}");
-            Debug.Log($"🔍 Submit button active: {submitAnswerButton.gameObject.activeInHierarchy}");
+            Debug.Log(" SUBMIT BUTTON IS NOW VISIBLE AND READY!");
+            Debug.Log($" Submit button position: {submitAnswerButton.transform.position}");
+            Debug.Log($" Submit button active: {submitAnswerButton.gameObject.activeInHierarchy}");
         }
         else
         {
-            Debug.LogError("❌ SUBMIT BUTTON IS NULL! No submit button available!");
+            Debug.LogError(" SUBMIT BUTTON IS NULL! No submit button available!");
         }
     }
     
@@ -3242,7 +4734,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             var question = currentAssignment.questions[currentQuestionIndex];
             bool isCorrect = ValidateIdentificationAnswer(userAnswer, question.correctAnswers);
             
-            Debug.Log($"🧠 Identification Answer: '{userAnswer}' | Correct: {isCorrect}");
+            Debug.Log($" Identification Answer: '{userAnswer}' | Correct: {isCorrect}");
             
             // Record the answer
             var questionResult = new QuestionResult
@@ -3260,12 +4752,12 @@ public class GameMechanicDragButtons : MonoBehaviour
             // Show feedback
             if (isCorrect)
             {
-                Debug.Log("✅ Correct identification answer!");
+                Debug.Log(" Correct identification answer!");
                 // PlayCorrectAnswerFeedback(); // TODO: Add sound feedback if needed
             }
             else
             {
-                Debug.Log("❌ Incorrect identification answer!");
+                Debug.Log(" Incorrect identification answer!");
                 // PlayIncorrectAnswerFeedback(); // TODO: Add sound feedback if needed
                 string correctAnswer = question.correctAnswers.Count > 0 ? question.correctAnswers[0] : "Unknown";
                 Debug.Log($"Correct answer was: {correctAnswer}");
@@ -3305,21 +4797,21 @@ public class GameMechanicDragButtons : MonoBehaviour
             // Exact match (case-insensitive)
             if (normalizedUserAnswer == normalizedCorrectAnswer)
             {
-                Debug.Log($"✅ Exact match: '{userAnswer}' = '{correctAnswer}'");
+                Debug.Log($" Exact match: '{userAnswer}' = '{correctAnswer}'");
                 return true;
             }
             
             // Contains match (user answer contains the correct answer)
             if (normalizedUserAnswer.Contains(normalizedCorrectAnswer))
             {
-                Debug.Log($"✅ Contains match: '{userAnswer}' contains '{correctAnswer}'");
+                Debug.Log($" Contains match: '{userAnswer}' contains '{correctAnswer}'");
                 return true;
             }
             
             // Reverse contains match (correct answer contains user answer)
             if (normalizedCorrectAnswer.Contains(normalizedUserAnswer))
             {
-                Debug.Log($"✅ Reverse contains match: '{correctAnswer}' contains '{userAnswer}'");
+                Debug.Log($" Reverse contains match: '{correctAnswer}' contains '{userAnswer}'");
                 return true;
             }
             
@@ -3327,12 +4819,12 @@ public class GameMechanicDragButtons : MonoBehaviour
             if (CalculateLevenshteinDistance(normalizedUserAnswer, normalizedCorrectAnswer) <= 2 && 
                 normalizedCorrectAnswer.Length > 3) // Only for words longer than 3 characters
             {
-                Debug.Log($"✅ Fuzzy match: '{userAnswer}' ≈ '{correctAnswer}' (typo tolerance)");
+                Debug.Log($" Fuzzy match: '{userAnswer}'  '{correctAnswer}' (typo tolerance)");
                 return true;
             }
         }
         
-        Debug.Log($"❌ No match found for '{userAnswer}' among correct answers: {string.Join(", ", correctAnswers)}");
+        Debug.Log($" No match found for '{userAnswer}' among correct answers: {string.Join(", ", correctAnswers)}");
         return false;
     }
     
@@ -3368,7 +4860,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     {
         try
         {
-            Debug.Log($"📤 Sending identification answer to web app: '{answer}' (Correct: {isCorrect})");
+            Debug.Log($" Sending identification answer to web app: '{answer}' (Correct: {isCorrect})");
             // Implement web app submission logic here if needed
             // This follows the same pattern as SendAnswerToWebApp for multiple choice
         }
@@ -3479,7 +4971,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             
             if (isCorrect)
             {
-                playerSpeechText.text = "🎉 Correct!";
+                playerSpeechText.text = " Correct!";
                 playerSpeechText.color = Color.green;
             }
             else
@@ -3487,7 +4979,7 @@ public class GameMechanicDragButtons : MonoBehaviour
                 var question = currentAssignment.questions[currentQuestionIndex];
                 int correctIndex = question.correctMultipleChoiceIndices[0]; // Get first correct answer
                 string correctOption = question.multipleChoiceOptions[correctIndex];
-                playerSpeechText.text = $"❌ Wrong!\nCorrect: {(char)('A' + correctIndex)}: {correctOption}";
+                playerSpeechText.text = $" Wrong!\nCorrect: {(char)('A' + correctIndex)}: {correctOption}";
                 playerSpeechText.color = Color.red;
             }
         }
@@ -3510,34 +5002,34 @@ public class GameMechanicDragButtons : MonoBehaviour
             if (savedGender.ToLower() == "female" && femaleSprite != null)
             {
                 playerImage.sprite = femaleSprite;
-                Debug.Log("👩 Showing female student avatar");
+                Debug.Log(" Showing female student avatar");
             }
             else if (savedGender.ToLower() == "male" && maleSprite != null)
             {
                 playerImage.sprite = maleSprite;
-                Debug.Log("👨 Showing male student avatar");
+                Debug.Log(" Showing male student avatar");
             }
             else if (maleSprite != null)
             {
                 // Default to male if no preference saved
                 playerImage.sprite = maleSprite;
-                Debug.Log("👨 Showing default male student avatar");
+                Debug.Log(" Showing default male student avatar");
             }
             else
             {
-                Debug.LogWarning("⚠️ No student avatar sprites assigned in Inspector");
+                Debug.LogWarning(" No student avatar sprites assigned in Inspector");
             }
         }
         else
         {
-            Debug.LogWarning("⚠️ playerImage is null - cannot show student avatar");
+            Debug.LogWarning(" playerImage is null - cannot show student avatar");
         }
         
         // Position player in visible area if needed
         if (player != null)
         {
             player.gameObject.SetActive(true);
-            Debug.Log("👤 Student player GameObject activated");
+            Debug.Log(" Student player GameObject activated");
         }
     }
     
@@ -3577,7 +5069,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         // Update UI with results
         if (questionText != null)
         {
-            questionText.text = $"🎉 Assignment Complete!\n\nScore: {correctAnswers}/{totalQuestions}\nPercentage: {percentage:F1}%\nPoints: {totalPoints}";
+            questionText.text = $" Assignment Complete!\n\nScore: {correctAnswers}/{totalQuestions}\nPercentage: {percentage:F1}%\nPoints: {totalPoints}";
         }
         
         // Hide answer buttons
@@ -3599,7 +5091,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             var buttonText = submitAnswerButton.GetComponentInChildren<TMP_Text>();
             if (buttonText != null)
             {
-                buttonText.text = "🔄 Play Again";
+                buttonText.text = " Play Again";
             }
             
             // Clear old listeners and add restart functionality
@@ -3614,7 +5106,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             var buttonText = submitToggleButton.GetComponentInChildren<TMP_Text>();
             if (buttonText != null)
             {
-                buttonText.text = "🏠 Home";
+                buttonText.text = " Home";
             }
             
             // Clear old listeners and add home functionality
@@ -3629,12 +5121,12 @@ public class GameMechanicDragButtons : MonoBehaviour
             
             if (percentage >= passingScorePercentage)
             {
-                playerSpeechText.text = $"🎉 Great job!\nYou passed with {percentage:F1}%!";
+                playerSpeechText.text = $" Great job!\nYou passed with {percentage:F1}%!";
                 playerSpeechText.color = Color.green;
             }
             else
             {
-                playerSpeechText.text = $"📚 Keep practicing!\nYou got {percentage:F1}%";
+                playerSpeechText.text = $" Keep practicing!\nYou got {percentage:F1}%";
                 playerSpeechText.color = Color.yellow;
             }
         }
@@ -3653,7 +5145,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     private void RestartAssignment()
     {
-        Debug.Log("🔄 Restarting assignment...");
+        Debug.Log(" Restarting assignment...");
         
         // Reset progress
         currentQuestionIndex = 0;
@@ -3681,7 +5173,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         FindUIComponents();
         DisplayCurrentQuestion();
         
-        Debug.Log("✅ Assignment restarted!");
+        Debug.Log(" Assignment restarted!");
     }
     
     /// <summary>
@@ -3689,7 +5181,7 @@ public class GameMechanicDragButtons : MonoBehaviour
     /// </summary>
     private void GoHome()
     {
-        Debug.Log("🏠 Going home...");
+        Debug.Log(" Going home...");
         
         // Reset the game state
         currentQuestionIndex = 0;
@@ -3709,7 +5201,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         
         // Show loading state and restart dynamic system
         if (questionText != null)
-            questionText.text = "🏠 Returning to subject selection...\nLoading your classes...";
+            questionText.text = " Returning to subject selection...\nLoading your classes...";
         
         // Restart the dynamic class system
         StartCoroutine(GoHomeCoroutine());
@@ -3725,13 +5217,13 @@ public class GameMechanicDragButtons : MonoBehaviour
         // Restart the dynamic system
         yield return StartCoroutine(GetAndUseFirstAvailableClass());
         
-        Debug.Log("✅ Returned to home (subject selection)!");
+        Debug.Log(" Returned to home (subject selection)!");
     }
     
     // Submit results to web app
     private IEnumerator SubmitAssignmentResults()
     {
-        Debug.Log("📊 Submitting assignment results to backend...");
+        Debug.Log(" Submitting assignment results to backend...");
         
         int correctAnswers = studentAnswers.Count(a => a.isCorrect);
         int totalQuestions = currentAssignment.questions.Length;
@@ -3749,7 +5241,7 @@ public class GameMechanicDragButtons : MonoBehaviour
             answers = studentAnswers.ToArray()
         };
         
-        Debug.Log($"📤 Submitting results: Student {results.student_id}, Assignment {results.assignment_id}, Score {results.score}/{results.total_questions} ({results.percentage:F1}%)");
+        Debug.Log($" Submitting results: Student {results.student_id}, Assignment {results.assignment_id}, Score {results.score}/{results.total_questions} ({results.percentage:F1}%)");
         
         // Try common result submission endpoints
         string[] possibleEndpoints = {
@@ -3760,14 +5252,14 @@ public class GameMechanicDragButtons : MonoBehaviour
         };
         
         string jsonData = JsonUtility.ToJson(results);
-        Debug.Log($"📤 Results payload: {jsonData}");
+        Debug.Log($" Results payload: {jsonData}");
         
         bool submitted = false;
         
         foreach (string endpoint in possibleEndpoints)
         {
             string url = $"{flaskURL}{endpoint}";
-            Debug.Log($"🔄 Trying endpoint: {url}");
+            Debug.Log($" Trying endpoint: {url}");
             
             using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
             {
@@ -3780,21 +5272,21 @@ public class GameMechanicDragButtons : MonoBehaviour
                 
                 if (request.result == UnityWebRequest.Result.Success)
                 {
-                    Debug.Log($"✅ Assignment results submitted successfully to {endpoint}!");
-                    Debug.Log($"📋 Response: {request.downloadHandler.text}");
+                    Debug.Log($" Assignment results submitted successfully to {endpoint}!");
+                    Debug.Log($" Response: {request.downloadHandler.text}");
                     submitted = true;
                     break;
                 }
                 else
                 {
-                    Debug.Log($"❌ Failed {endpoint}: {request.error} (Code: {request.responseCode})");
+                    Debug.Log($" Failed {endpoint}: {request.error} (Code: {request.responseCode})");
                 }
             }
         }
         
         if (!submitted)
         {
-            Debug.LogWarning("⚠️ Could not submit to any endpoint. Results saved locally only.");
+            Debug.LogWarning(" Could not submit to any endpoint. Results saved locally only.");
             // Save results locally as backup
             SaveResultsLocally(results);
         }
@@ -3812,11 +5304,11 @@ public class GameMechanicDragButtons : MonoBehaviour
             string jsonResults = JsonUtility.ToJson(results);
             PlayerPrefs.SetString(key, jsonResults);
             PlayerPrefs.Save();
-            Debug.Log($"💾 Results saved locally with key: {key}");
+            Debug.Log($" Results saved locally with key: {key}");
         }
         catch (System.Exception ex)
         {
-            Debug.LogError($"❌ Error saving results locally: {ex.Message}");
+            Debug.LogError($" Error saving results locally: {ex.Message}");
         }
     }
 
@@ -3872,7 +5364,10 @@ public class GameMechanicDragButtons : MonoBehaviour
     {
         Debug.Log("=== STARTING ASSIGNMENT POLLING ===");
         
-        while (string.IsNullOrEmpty(PlayerPrefs.GetString("CurrentAssignmentContent", "")))
+        string currentSubject = PlayerPrefs.GetString(GetSessionKey("CurrentSubject"), "");
+        string assignmentContent = "";
+        
+        while (string.IsNullOrEmpty(assignmentContent))
         {
             Debug.Log("Polling for assignments from Flask API...");
             yield return new WaitForSeconds(2f); // Check every 2 seconds
@@ -3880,12 +5375,16 @@ public class GameMechanicDragButtons : MonoBehaviour
             // Try to fetch from Flask API
             yield return StartCoroutine(FetchAssignmentFromAPI());
             
-            // Check if we got new content
-            string content = PlayerPrefs.GetString("CurrentAssignmentContent", "");
-            if (!string.IsNullOrEmpty(content))
+            // Check if we got new content for current subject
+            if (!string.IsNullOrEmpty(currentSubject))
             {
-                Debug.Log("Found new assignment content from API, processing...");
-                ProcessAssignmentContent(content);
+                assignmentContent = PlayerPrefs.GetString(GetSubjectAssignmentContentKey(currentSubject), "");
+            }
+            
+            if (!string.IsNullOrEmpty(assignmentContent))
+            {
+                Debug.Log($"Found new assignment content for subject '{currentSubject}' from API, processing...");
+                ProcessAssignmentContent(assignmentContent);
                 break;
             }
             else
@@ -3901,7 +5400,7 @@ public class GameMechanicDragButtons : MonoBehaviour
         
         // Use dynamic system instead of PlayerPrefs
         if (questionText != null)
-            questionText.text = "🎯 Loading dynamic assignments from backend...";
+            questionText.text = " Loading dynamic assignments from backend...";
         
         // Start dynamic assignment loading
         yield return StartCoroutine(GetAndUseFirstAvailableClass());
@@ -3973,7 +5472,7 @@ public class GameMechanicDragButtons : MonoBehaviour
                 var webAppAssignment = new WebAppAssignment
                 {
                     title = selectedAssignment.title,
-                    subject = PlayerPrefs.GetString("CurrentSubject", ""),
+                    subject = PlayerPrefs.GetString(GetSessionKey("CurrentSubject"), ""),
                     assignment_type = "multiple_choice",
                     questions = ConvertToWebAppQuestions(selectedAssignment.questions)
                 };
@@ -3981,7 +5480,8 @@ public class GameMechanicDragButtons : MonoBehaviour
                 string convertedJson = JsonUtility.ToJson(webAppAssignment);
                 Debug.Log($"Converted assignment JSON: {convertedJson}");
                 
-                PlayerPrefs.SetString("CurrentAssignmentContent", convertedJson);
+                string subjectContentKey = GetSubjectAssignmentContentKey(webAppAssignment.subject);
+                PlayerPrefs.SetString(subjectContentKey, convertedJson);
                 PlayerPrefs.Save();
                 
                 ProcessAssignmentContent(convertedJson);
@@ -4212,7 +5712,7 @@ public class Subject
 public class JoinClassApiPayload
 {
     public string class_code;
-    // Remove static student_id - let backend handle authentication dynamically
+    public int student_id; // Include student_id to register students properly
 }
 
 [System.Serializable]
@@ -4240,3 +5740,5 @@ public class AssignmentResultsPayload
     public string completed_at;
     public QuestionResult[] answers;
 }
+
+

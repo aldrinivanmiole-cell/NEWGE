@@ -1164,6 +1164,7 @@ public class FinalNavigationFix : MonoBehaviour
 
     void SelectAssignmentAndLoad(string subject, SimpleAssignment a)
     {
+        Debug.Log($"🎯 SelectAssignmentAndLoad called with subject='{subject}', assignment id='{a.id}', title='{a.title}'");
         PlayerPrefs.SetString("CurrentSubject", subject);
         if (!string.IsNullOrEmpty(a.id)) PlayerPrefs.SetString("CurrentAssignmentId", a.id);
         if (!string.IsNullOrEmpty(a.title)) PlayerPrefs.SetString("CurrentAssignmentTitle", a.title);
@@ -1171,6 +1172,7 @@ public class FinalNavigationFix : MonoBehaviour
         if (!string.IsNullOrEmpty(a.type)) PlayerPrefs.SetString("CurrentGameplayType", a.type);
         PlayerPrefs.SetString("AssignmentSource", "teacher");
         PlayerPrefs.Save();
+        Debug.Log($"🎯 PlayerPrefs set: CurrentSubject='{PlayerPrefs.GetString("CurrentSubject")}', CurrentAssignmentId='{PlayerPrefs.GetString("CurrentAssignmentId")}', CurrentAssignmentTitle='{PlayerPrefs.GetString("CurrentAssignmentTitle")}'");
         LoadStage("Stage1");
     }
 
