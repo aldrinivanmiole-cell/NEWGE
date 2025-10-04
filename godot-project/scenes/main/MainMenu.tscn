@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3 uid="uid://dmk4y8vh3n7xw"]
+[gd_scene load_steps=3 format=3 uid="uid://dmk4y8vh3n7xw"]
 
 [ext_resource type="Theme" uid="uid://dcsvwhb7upfad" path="res://assets/themes/edugame_theme.tres" id="1_theme"]
+[ext_resource type="Script" path="res://scripts/main/MainMenuController.gd" id="2_controller"]
 
 [node name="MainMenu" type="Control"]
 layout_mode = 3
@@ -10,6 +11,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme = ExtResource("1_theme")
+script = ExtResource("2_controller")
 
 [node name="BackgroundPanel" type="Panel" parent="."]
 layout_mode = 1
