@@ -1,0 +1,133 @@
+[gd_scene load_steps=3 format=3 uid="uid://cj8x5k3qy7h2v"]
+
+[ext_resource type="Script" path="res://scripts/auth/RegisterController.gd" id="1_register"]
+[ext_resource type="Theme" uid="uid://dcsvwhb7upfad" path="res://assets/themes/edugame_theme.tres" id="2_theme"]
+
+[node name="RegisterScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_register")
+
+[node name="BackgroundPanel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="WoodenFrame" type="PanelContainer" parent="BackgroundPanel"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -400.0
+offset_top = -700.0
+offset_right = 400.0
+offset_bottom = 700.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="BackgroundPanel/WoodenFrame"]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="BackgroundPanel/WoodenFrame/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 30
+
+[node name="TitleLabel" type="Label" parent="BackgroundPanel/WoodenFrame/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+text = "REGISTER"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Spacer1" type="Control" parent="BackgroundPanel/WoodenFrame/ScrollContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+
+[node name="FirstNameInput" type="LineEdit" parent="BackgroundPanel/WoodenFrame/ScrollContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+placeholder_text = "FIRSTNAME..."
+alignment = 1
+
+[node name="LastNameInput" type="LineEdit" parent="BackgroundPanel/WoodenFrame/ScrollContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+placeholder_text = "LASTNAME..."
+alignment = 1
+
+[node name="EmailInput" type="LineEdit" parent="BackgroundPanel/WoodenFrame/ScrollContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+placeholder_text = "EMAIL..."
+alignment = 1
+
+[node name="PasswordInput" type="LineEdit" parent="BackgroundPanel/WoodenFrame/ScrollContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+placeholder_text = "PASSWORD..."
+alignment = 1
+secret = true
+
+[node name="ConfirmPasswordInput" type="LineEdit" parent="BackgroundPanel/WoodenFrame/ScrollContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+placeholder_text = "CONFIRM PASSWORD..."
+alignment = 1
+secret = true
+
+[node name="StatusLabel" type="Label" parent="BackgroundPanel/WoodenFrame/ScrollContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="SubmitButton" type="Button" parent="BackgroundPanel/WoodenFrame/ScrollContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+text = "SUBMIT"
+
+[node name="Spacer2" type="Control" parent="BackgroundPanel/WoodenFrame/ScrollContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 20)
+layout_mode = 2
+
+[node name="BackButton" type="Button" parent="BackgroundPanel/WoodenFrame/ScrollContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+text = "Back to Login"
+
+[node name="LoadingPanel" type="Panel" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LoadingLabel" type="Label" parent="LoadingPanel"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -50.0
+offset_right = 200.0
+offset_bottom = 50.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Creating account..."
+horizontal_alignment = 1
+vertical_alignment = 1
