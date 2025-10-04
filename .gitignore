@@ -102,7 +102,7 @@ InitTestScene*.unity*
 godot-project/.godot/
 godot-project/.import/
 godot-project/export.cfg
-godot-project/export_presets.cfg
+# godot-project/export_presets.cfg - Allow this to be committed
 godot-project/*.translation
 godot-project/.mono/
 godot-project/data_*/

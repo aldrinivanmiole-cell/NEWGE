@@ -2,9 +2,7 @@
 .godot/
 .import/
 export.cfg
-export_presets.cfg
-
-# Godot-specific
+# export_presets.cfg - We want to commit this for Android setup
 *.translation
 
 # Mono-specific ignores
