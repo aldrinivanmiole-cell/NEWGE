@@ -1,0 +1,80 @@
+[gd_scene load_steps=2 format=3 uid="uid://dmk4y8vh3n7xw"]
+
+[ext_resource type="Theme" uid="uid://dcsvwhb7upfad" path="res://assets/themes/edugame_theme.tres" id="1_theme"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("1_theme")
+
+[node name="BackgroundPanel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="BackgroundPanel"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -400.0
+offset_top = -400.0
+offset_right = 400.0
+offset_bottom = 400.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 30
+
+[node name="TitleLabel" type="Label" parent="BackgroundPanel/VBoxContainer"]
+layout_mode = 2
+text = "MAIN MENU"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="WelcomeLabel" type="Label" parent="BackgroundPanel/VBoxContainer"]
+layout_mode = 2
+text = "Welcome, Student!"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Spacer1" type="Control" parent="BackgroundPanel/VBoxContainer"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+
+[node name="SubjectsButton" type="Button" parent="BackgroundPanel/VBoxContainer"]
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+text = "My Subjects"
+
+[node name="ClassesButton" type="Button" parent="BackgroundPanel/VBoxContainer"]
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+text = "Join Class"
+
+[node name="LeaderboardButton" type="Button" parent="BackgroundPanel/VBoxContainer"]
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+text = "Leaderboard"
+
+[node name="SettingsButton" type="Button" parent="BackgroundPanel/VBoxContainer"]
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+text = "Settings"
+
+[node name="Spacer2" type="Control" parent="BackgroundPanel/VBoxContainer"]
+custom_minimum_size = Vector2(0, 20)
+layout_mode = 2
+
+[node name="LogoutButton" type="Button" parent="BackgroundPanel/VBoxContainer"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+text = "Logout"

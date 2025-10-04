@@ -97,3 +97,13 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# Godot 4+ specific ignores (for godot-project directory)
+godot-project/.godot/
+godot-project/.import/
+godot-project/export.cfg
+godot-project/export_presets.cfg
+godot-project/*.translation
+godot-project/.mono/
+godot-project/data_*/
+godot-project/mono_crash.*.json
